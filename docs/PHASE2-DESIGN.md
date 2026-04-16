@@ -79,8 +79,9 @@ Phase 2 は「設計フェーズ」であり、以下を確定する:
 
 **セキュリティ方針**:
 - パスワード: bcrypt (cost factor 12)
-- Access Token: 15分有効、メモリ保持 (SecureStore)
-- Refresh Token: 30日有効、SecureStore 保存
+- **Access Token: メモリ保持（変数/Zustand ストア内）。永続保存しない**
+- **Refresh Token: SecureStore に保存（永続）**
+- **アプリ再起動時: SecureStore から Refresh Token を読み出し → `/auth/refresh` で新しい Access Token を取得**
 - リフレッシュトークンのローテーション（使用時に新トークン発行、旧トークン無効化）
 - レート制限: ログイン試行 5回/分
 
@@ -130,11 +131,12 @@ CREATE UNIQUE INDEX idx_users_email ON users(email);
 interface Device {
   id: string;                  // UUID v4
   user_id: string;             // FK → users.id
-  device_id: string;           // 端末固有ID (expo-device)
+  installation_id: string;     // アプリ初回起動時に生成する UUID v4（SecureStore 永続保存）
   device_name: string;         // "iPhone 15 Pro" 等
   os: 'ios' | 'android';
   os_version: string;          // "18.2"
   app_version: string;         // "1.0.0"
+  os_device_id: string | null; // OS由来ID（補助情報、IDFV等）
   push_token: string | null;   // プッシュ通知トークン
   is_active: boolean;          // 現在アクティブか
   last_seen_at: string;        // 最終接続時刻
@@ -147,24 +149,28 @@ interface Device {
 CREATE TABLE devices (
   id TEXT PRIMARY KEY,
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  device_id TEXT NOT NULL,
+  installation_id TEXT NOT NULL,
   device_name TEXT NOT NULL,
   os TEXT NOT NULL CHECK (os IN ('ios', 'android')),
   os_version TEXT NOT NULL,
   app_version TEXT NOT NULL,
+  os_device_id TEXT,
   push_token TEXT,
   is_active INTEGER NOT NULL DEFAULT 1,
   last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX idx_devices_user_id ON devices(user_id);
-CREATE UNIQUE INDEX idx_devices_user_device ON devices(user_id, device_id);
+CREATE UNIQUE INDEX idx_devices_user_install ON devices(user_id, installation_id);
 ```
 
 **ポイント**:
 - 1ユーザー = 複数端末（同じアカウントで iPhone + Android 両方 OK）
-- `device_id` は expo-device の uniqueId を使用
-- `user_id + device_id` でユニーク制約（同端末の二重登録防止）
+- **`installation_id` はアプリ初回起動時に UUID v4 を生成し、expo-secure-store に永続保存する app-scoped device installation ID**
+  - OS由来ID（IDFV等）はアプリ削除でリセットされるため、主キーには使わない
+  - OS由来IDは `os_device_id` に補助情報として保存（分析・デバッグ用途）
+- `user_id + installation_id` でユニーク制約（同端末の二重登録防止）
+- アプリ再インストール時は新しい installation_id が生成される（新端末として登録）
 
 ### 3c. NodeParticipationState（ノード参加状態）
 
@@ -489,7 +495,7 @@ CREATE INDEX idx_rt_token_hash ON refresh_tokens(token_hash);
 | メソッド | パス | 説明 | 認証 |
 |---------|------|------|------|
 | PATCH | `/users/me` | プロフィール更新 | 必要 |
-| PATCH | `/users/me/supporter` | サポーター切替 | 必要 |
+| POST | `/users/me/supporter/sync` | サポーター状態同期（ストア課金検証結果の反映） | 必要 |
 
 ### API 入出力詳細
 
@@ -521,11 +527,12 @@ CREATE INDEX idx_rt_token_hash ON refresh_tokens(token_hash);
   email: string;
   password: string;
   device_info?: {     // ログイン時に端末情報も送る
-    device_id: string;
+    installation_id: string;
     device_name: string;
     os: 'ios' | 'android';
     os_version: string;
     app_version: string;
+    os_device_id?: string;  // OS由来ID（補助情報）
   }
 }
 
@@ -545,7 +552,7 @@ CREATE INDEX idx_rt_token_hash ON refresh_tokens(token_hash);
 ```typescript
 // Request — アプリから10秒おきに送信
 {
-  device_id: string;
+  installation_id: string;
   status: ParticipationStatus;
   wifi_connected: boolean;
   wifi_strength: 'excellent' | 'good' | 'fair' | 'poor';
@@ -829,7 +836,7 @@ module.exports = {
 | 13 | 文章要約 | `app/summarize.tsx` | (Phase 3 以降) | — |
 | 14 | 翻訳 | `app/translate.tsx` | (Phase 3 以降) | — |
 | 15 | 文章生成 | `app/draft.tsx` | (Phase 3 以降) | — |
-| 16 | サポーター | `app/supporter.tsx` | `PATCH /users/me/supporter` | AuthStore |
+| 16 | サポーター | `app/supporter.tsx` | `POST /users/me/supporter/sync` | AuthStore |
 | 17 | 通知履歴 | `app/notifications.tsx` | `GET /notifications`, `PATCH /.../read` | NotificationStore |
 | 18 | エラー | `app/error.tsx` | なし | — |
 
@@ -879,7 +886,7 @@ module.exports = {
 
 | 懸念 | 対策 |
 |------|------|
-| SQLite の限界 | ユーザー1万人程度までは問題なし。超えたら PostgreSQL に Drizzle adapter 切替 |
+| SQLite の限界 | ユーザー1万人程度までは問題なし。超えたら PostgreSQL に Drizzle adapter 切替。**将来 PostgreSQL 移行は設計段階から前提としており、Drizzle ORM の adapter 切替で移行可能。SQL 方言差（datetime関数等）は移行時に要確認** |
 | VPS 1台の限界 | 初期段階はこれで十分。スケール時は API サーバーと DB を分離 |
 | Heartbeat 負荷 | 10秒 × 同時100ユーザー = 600 req/分 → Hono なら余裕 |
 
@@ -889,7 +896,7 @@ module.exports = {
 |------|------|
 | SecureStore の容量 | JWT トークンのみ保存（数百バイト）→ 問題なし |
 | バックグラウンド | Phase 2 では考慮しない。フォアグラウンドのみ |
-| expo-device の uniqueId | iOS は IDFV（アプリ削除でリセット）。再登録フローが必要 |
+| expo-device の uniqueId | 主キーとしては使わない。installation_id（アプリ生成UUID）を採用。OS由来IDは補助情報のみ |
 | オフライン対応 | Phase 2 では考慮しない。オフライン時はエラー表示 |
 
 ### 運用
@@ -928,7 +935,7 @@ users (1)
 | **Zustand** | 状態管理 | **2 (新規)** |
 | **TanStack Query** | API 通信・キャッシュ | **2 (新規)** |
 | **expo-secure-store** | トークン保存 | **2 (新規)** |
-| **expo-device** | 端末情報取得 | **2 (新規)** |
+| **expo-device** | 端末情報取得（補助情報のみ。主キーには使わない） | **2 (新規)** |
 
 ### バックエンド（Phase 2 新規）
 
