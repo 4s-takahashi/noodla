@@ -281,7 +281,50 @@ curl http://localhost:3001/api/v1/rank \
 
 ---
 
-## 7. Phase 4 への引継ぎ事項
+## 7. API 実装範囲の分類
+
+### ✅ 必須実装（Phase 3 の目的に直結）
+
+| API | 理由 |
+|-----|------|
+| POST `/auth/register` | 認証の最小実装 |
+| POST `/auth/login` | 認証の最小実装 |
+| POST `/auth/refresh` | Refresh Token フロー |
+| POST `/auth/logout` | セッション管理 |
+| GET `/auth/me` | セッション確認 |
+| POST `/devices` | installation_id による端末登録 |
+| GET `/devices` | 端末一覧取得 |
+| PATCH `/devices/:installationId` | ノード参加状態更新（heartbeat 兼用） |
+| GET `/points/balance` | ポイント残高取得 |
+| GET `/points/history` | ポイント履歴取得 |
+| GET `/rank` | ランク情報取得 |
+| GET `/notifications` | 通知一覧取得 |
+
+### 🔶 任意で先行実装したもの（Phase 3 の範囲を少し超えるが、実装コストが小さく一貫性のために含めた）
+
+| API | 理由 |
+|-----|------|
+| PUT `/node/state` | heartbeat との統合で自然に実装。Phase 3 指示の「ノード参加状態管理」に含まれるが、専用エンドポイントとしては追加 |
+| GET `/node/state` | 上記と対で取得側 |
+| GET `/node/stats` | グローバルノード統計（モック値）。UI の「ネットワーク全体のノード数」表示用 |
+| GET `/points/summary` | タイプ別集計。ポイント画面の内訳表示に利用 |
+| GET `/rank/leaderboard` | ランキング一覧。ランク画面に他ユーザーとの比較を表示 |
+| PATCH `/notifications/:id/read` | 個別既読。通知 UI の既読操作に必要 |
+| POST `/notifications/read-all` | 全既読。利便性のため追加 |
+| DELETE `/devices/:installationId` | 端末削除。設定画面のデバイス管理用 |
+| PATCH `/users/me` | プロフィール更新。設定画面で必要 |
+
+### 📋 Phase 4 へ回してもよかったもの
+
+| API | 理由 |
+|-----|------|
+| GET `/node/stats` | グローバル統計は実ノード処理がないと意味が薄い。モック値を返しているだけ |
+| GET `/rank/leaderboard` | ユーザーが1人しかいない段階では不要。スケール時に再設計の可能性あり |
+| POST `/users/me/supporter/sync` | placeholder として存在するが、課金連携まで実質不要 |
+
+---
+
+## 8. Phase 4 への引継ぎ事項
 
 | 項目 | 状態 | Phase 4 での対応 |
 |------|------|----------------|

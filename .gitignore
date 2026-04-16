@@ -33,6 +33,12 @@ yarn-error.*
 # local env files
 .env*.local
 
+# SQLite database files (recreate via migration + seed)
+server/data/*.db
+server/data/*.db-wal
+server/data/*.db-shm
+server/data/*.db-journal
+
 # typescript
 *.tsbuildinfo
 
