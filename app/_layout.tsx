@@ -3,8 +3,18 @@ import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AppProvider } from '../src/context/AppContext';
 import { Colors } from '../src/theme';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 2,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 SplashScreen.preventAutoHideAsync();
 
@@ -18,9 +28,10 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <SafeAreaProvider>
-      <AppProvider>
-        <StatusBar style="light" backgroundColor={Colors.bgPrimary} />
+    <QueryClientProvider client={queryClient}>
+      <SafeAreaProvider>
+        <AppProvider>
+          <StatusBar style="light" backgroundColor={Colors.bgPrimary} />
         <Stack
           screenOptions={{
             headerShown: false,
@@ -43,8 +54,9 @@ export default function RootLayout() {
           <Stack.Screen name="connection" />
           <Stack.Screen name="notifications" />
           <Stack.Screen name="error" />
-        </Stack>
-      </AppProvider>
-    </SafeAreaProvider>
+          </Stack>
+        </AppProvider>
+      </SafeAreaProvider>
+    </QueryClientProvider>
   );
 }

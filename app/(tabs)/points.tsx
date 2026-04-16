@@ -1,12 +1,38 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Colors, Typography, Spacing, BorderRadius, Layout } from '../../src/theme';
 import { useApp } from '../../src/context/AppContext';
 import { PointHistoryRow } from '../../src/components/cards/PointHistoryRow';
+import { usePointsBalance, usePointsHistory } from '../../src/hooks/usePoints';
+import { USE_REAL_API } from '../../src/api/config';
 
 export default function PointsScreen() {
-  const { pointsData } = useApp();
+  const { pointsData: mockPointsData } = useApp();
+  const { data: balanceData, isLoading: balanceLoading } = usePointsBalance();
+  const { data: historyData, isLoading: historyLoading } = usePointsHistory();
+
+  // Merged data
+  const balance = USE_REAL_API && balanceData ? balanceData.balance : mockPointsData.balance;
+  const today = USE_REAL_API && balanceData ? balanceData.today : mockPointsData.today;
+  const week = USE_REAL_API && balanceData ? balanceData.week : mockPointsData.week;
+  const month = USE_REAL_API && balanceData ? balanceData.month : mockPointsData.month;
+  const totalEarned = mockPointsData.totalEarned; // not in API v1
+  const totalSpent = mockPointsData.totalSpent;   // not in API v1
+
+  // Map API history to the format PointHistoryRow expects
+  const history = USE_REAL_API && historyData
+    ? historyData.items.map(item => ({
+        id: item.id,
+        type: item.type as any,
+        amount: item.amount,
+        description: item.description,
+        date: item.created_at,
+        category: item.type,
+      }))
+    : mockPointsData.history;
+
+  const isLoading = USE_REAL_API && (balanceLoading || historyLoading);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -18,20 +44,23 @@ export default function PointsScreen() {
         <View style={styles.balanceCard}>
           <View style={styles.balanceGlow} />
           <Text style={styles.balanceLabel}>現在の残高</Text>
-          <Text style={styles.balanceValue}>{pointsData.balance.toLocaleString()} pt</Text>
+          {isLoading
+            ? <ActivityIndicator color={Colors.cyan} style={{ marginVertical: 12 }} />
+            : <Text style={styles.balanceValue}>{balance.toLocaleString()} pt</Text>
+          }
           <View style={styles.balanceStats}>
             <View style={styles.balanceStat}>
-              <Text style={styles.balanceStatValue}>+{pointsData.today}</Text>
+              <Text style={styles.balanceStatValue}>+{today}</Text>
               <Text style={styles.balanceStatLabel}>今日</Text>
             </View>
             <View style={styles.balanceStatDivider} />
             <View style={styles.balanceStat}>
-              <Text style={styles.balanceStatValue}>+{pointsData.week}</Text>
+              <Text style={styles.balanceStatValue}>+{week}</Text>
               <Text style={styles.balanceStatLabel}>今週</Text>
             </View>
             <View style={styles.balanceStatDivider} />
             <View style={styles.balanceStat}>
-              <Text style={styles.balanceStatValue}>+{pointsData.month}</Text>
+              <Text style={styles.balanceStatValue}>+{month}</Text>
               <Text style={styles.balanceStatLabel}>今月</Text>
             </View>
           </View>
@@ -42,14 +71,14 @@ export default function PointsScreen() {
           <View style={styles.summaryItem}>
             <Text style={styles.summaryLabel}>総獲得ポイント</Text>
             <Text style={[styles.summaryValue, styles.earned]}>
-              +{pointsData.totalEarned.toLocaleString()} pt
+              +{totalEarned.toLocaleString()} pt
             </Text>
           </View>
           <View style={styles.summaryDivider} />
           <View style={styles.summaryItem}>
             <Text style={styles.summaryLabel}>総使用ポイント</Text>
             <Text style={[styles.summaryValue, styles.spent]}>
-              -{pointsData.totalSpent.toLocaleString()} pt
+              -{totalSpent.toLocaleString()} pt
             </Text>
           </View>
         </View>
@@ -57,11 +86,11 @@ export default function PointsScreen() {
         {/* History */}
         <Text style={styles.historyTitle}>取引履歴</Text>
         <View style={styles.historyCard}>
-          {pointsData.history.map((tx, i) => (
+          {history.map((tx, i) => (
             <PointHistoryRow
               key={tx.id}
               transaction={tx}
-              showDivider={i < pointsData.history.length - 1}
+              showDivider={i < history.length - 1}
             />
           ))}
         </View>

@@ -7,6 +7,9 @@ import { Colors, Typography, Spacing, BorderRadius, Layout } from '../../src/the
 import { useApp } from '../../src/context/AppContext';
 import { Badge } from '../../src/components/ui/Badge';
 import { getRankColor } from '../../src/utils/format';
+import { useAuthStore } from '../../src/stores/auth-store';
+import { useDevices } from '../../src/hooks/useDevices';
+import { USE_REAL_API } from '../../src/api/config';
 
 interface SettingRowProps {
   icon: string;
@@ -54,7 +57,21 @@ const SettingRow: React.FC<SettingRowProps> = ({
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { user, settings, updateSettings, logout } = useApp();
+  const { user: mockUser, settings, updateSettings, logout: mockLogout } = useApp();
+  const authStore = useAuthStore();
+  const { data: devicesData } = useDevices();
+
+  // Merge mock and real data
+  const user = USE_REAL_API && authStore.user
+    ? {
+        ...mockUser,
+        name: authStore.user.name,
+        email: authStore.user.email,
+        rank: authStore.user.rank as any,
+        supporter: authStore.user.is_supporter,
+        deviceName: devicesData?.items[0]?.device_name ?? mockUser.deviceName,
+      }
+    : mockUser;
 
   const handleLogout = () => {
     Alert.alert(
@@ -65,8 +82,12 @@ export default function SettingsScreen() {
         {
           text: 'ログアウト',
           style: 'destructive',
-          onPress: () => {
-            logout();
+          onPress: async () => {
+            if (USE_REAL_API) {
+              await authStore.logout();
+            } else {
+              mockLogout();
+            }
             router.replace('/login');
           },
         },
@@ -86,7 +107,7 @@ export default function SettingsScreen() {
           </View>
           <View style={styles.userInfo}>
             <Text style={styles.userName}>{user.name}</Text>
-            <Text style={styles.userEmail}>tanaka@example.com</Text>
+            <Text style={styles.userEmail}>{user.email}</Text>
             <View style={styles.userBadges}>
               <Badge
                 variant="rank"

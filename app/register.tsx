@@ -14,10 +14,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius } from '../src/theme';
 import { Button, Input } from '../src/components/ui';
 import { useApp } from '../src/context/AppContext';
+import { useAuthStore } from '../src/stores/auth-store';
+import { USE_REAL_API } from '../src/api/config';
 
 export default function RegisterScreen() {
   const router = useRouter();
-  const { login } = useApp();
+  const { login: mockLogin } = useApp();
+  const authStore = useAuthStore();
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -36,10 +39,20 @@ export default function RegisterScreen() {
     }
     setLoading(true);
     setError('');
-    await new Promise(r => setTimeout(r, 1200));
-    login(email, password);
-    setLoading(false);
-    router.replace('/(tabs)/home');
+
+    try {
+      if (USE_REAL_API) {
+        await authStore.register(email, password, name);
+      } else {
+        await new Promise(r => setTimeout(r, 1200));
+        mockLogin(email, password);
+      }
+      router.replace('/(tabs)/home');
+    } catch (err: any) {
+      setError(err.message ?? '登録に失敗しました');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

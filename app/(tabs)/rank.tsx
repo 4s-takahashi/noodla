@@ -1,10 +1,12 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius, Layout } from '../../src/theme';
 import { useApp } from '../../src/context/AppContext';
 import { getRankColor, getNextRank } from '../../src/utils/format';
+import { useRank } from '../../src/hooks/useRank';
+import { USE_REAL_API } from '../../src/api/config';
 
 const ranks = [
   { name: 'Bronze', minScore: 0, maxScore: 499, color: '#cd7f32', perks: ['毎日最大10pt獲得', '基本AIツール利用可能'] },
@@ -21,18 +23,35 @@ const rankPrevScores: Record<string, number> = {
 };
 
 export default function RankScreen() {
-  const { user } = useApp();
-  const nextScore = rankNextScores[user.rank] ?? 1000;
-  const prevScore = rankPrevScores[user.rank] ?? 0;
-  const progress = Math.round(((user.score - prevScore) / (nextScore - prevScore)) * 100);
-  const remaining = nextScore - user.score;
-  const nextRank = getNextRank(user.rank);
+  const { user: mockUser } = useApp();
+  const { data: rankData, isLoading } = useRank();
 
-  const improvementHints = [
-    '毎日充電中にWi-Fi接続でネットワーク参加を続けましょう',
-    '夜間の参加でより多くのタスクを処理できます',
-    'サブノード候補に選ばれると追加ポイントが獲得できます',
-  ];
+  // Merge mock and real data
+  const rankName = USE_REAL_API && rankData ? rankData.rank : mockUser.rank;
+  const score = USE_REAL_API && rankData ? rankData.score : mockUser.score;
+  const nextScoreVal = USE_REAL_API && rankData
+    ? rankData.next_rank_score
+    : (rankNextScores[mockUser.rank] ?? 1000);
+  const progressVal = USE_REAL_API && rankData ? rankData.progress : (() => {
+    const prevScore = rankPrevScores[mockUser.rank] ?? 0;
+    const nextS = rankNextScores[mockUser.rank] ?? 1000;
+    return Math.round(((mockUser.score - prevScore) / (nextS - prevScore)) * 100);
+  })();
+
+  const remaining = nextScoreVal - score;
+  const nextRank = getNextRank(rankName);
+
+  const improvementHints = USE_REAL_API && rankData?.evaluation
+    ? [
+        `接続安定性: ${Math.round(rankData.evaluation.connection_stability)}% — Wi-Fiを安定させましょう`,
+        `参加日数: ${rankData.evaluation.total_days}日 — 毎日参加でスコアアップ`,
+        `連続参加: ${rankData.evaluation.consecutive_days}日 — 継続が大切です`,
+      ]
+    : [
+        '毎日充電中にWi-Fi接続でネットワーク参加を続けましょう',
+        '夜間の参加でより多くのタスクを処理できます',
+        'サブノード候補に選ばれると追加ポイントが獲得できます',
+      ];
 
   return (
     <SafeAreaView style={styles.container}>
@@ -40,32 +59,35 @@ export default function RankScreen() {
         <Text style={styles.title}>貢献ランク</Text>
 
         {/* Current rank hero */}
-        <View style={[styles.rankHero, { borderColor: `${getRankColor(user.rank)}30` }]}>
+        <View style={[styles.rankHero, { borderColor: `${getRankColor(rankName)}30` }]}>
           <View style={styles.rankHeroGlow} />
-          <View style={[styles.rankTrophyWrapper, { backgroundColor: `${getRankColor(user.rank)}15` }]}>
-            <Ionicons name="trophy" size={48} color={getRankColor(user.rank)} />
+          <View style={[styles.rankTrophyWrapper, { backgroundColor: `${getRankColor(rankName)}15` }]}>
+            {isLoading
+              ? <ActivityIndicator color={getRankColor(rankName)} size="large" />
+              : <Ionicons name="trophy" size={48} color={getRankColor(rankName)} />
+            }
           </View>
-          <Text style={[styles.rankHeroName, { color: getRankColor(user.rank) }]}>
-            {user.rank}
+          <Text style={[styles.rankHeroName, { color: getRankColor(rankName) }]}>
+            {rankName}
           </Text>
-          <Text style={styles.rankHeroScore}>{user.score} スコア</Text>
+          <Text style={styles.rankHeroScore}>{score} スコア</Text>
 
           {/* Progress bar */}
           <View style={styles.progressSection}>
             <View style={styles.progressLabels}>
-              <Text style={styles.progressLabel}>{user.rank}</Text>
+              <Text style={styles.progressLabel}>{rankName}</Text>
               <Text style={[styles.progressLabel, { color: getRankColor(nextRank) }]}>{nextRank}</Text>
             </View>
             <View style={styles.progressBar}>
               <View
                 style={[
                   styles.progressFill,
-                  { width: `${Math.min(100, progress)}%`, backgroundColor: getRankColor(user.rank) },
+                  { width: `${Math.min(100, progressVal)}%`, backgroundColor: getRankColor(rankName) },
                 ]}
               />
             </View>
             <View style={styles.progressStats}>
-              <Text style={styles.progressText}>{progress}% 達成</Text>
+              <Text style={styles.progressText}>{progressVal}% 達成</Text>
               <Text style={styles.progressText}>
                 あと{remaining}スコアで{nextRank}ランク
               </Text>
@@ -90,8 +112,8 @@ export default function RankScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>全ランク一覧</Text>
           {ranks.map((rank) => {
-            const isCurrent = rank.name === user.rank;
-            const isPast = user.score >= rank.maxScore;
+            const isCurrent = rank.name === rankName;
+            const isPast = score >= rank.maxScore;
             const rankColor = rank.color;
             return (
               <View

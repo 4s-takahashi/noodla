@@ -18,6 +18,10 @@ import { StatCard } from '../../src/components/cards/StatCard';
 import { RankProgressCard } from '../../src/components/cards/RankProgressCard';
 import { Badge } from '../../src/components/ui/Badge';
 import { getStatusLabel } from '../../src/utils/format';
+import { useAuthStore } from '../../src/stores/auth-store';
+import { useNodeStore } from '../../src/stores/node-store';
+import { usePointsBalance } from '../../src/hooks/usePoints';
+import { USE_REAL_API } from '../../src/api/config';
 
 const { width } = Dimensions.get('window');
 
@@ -30,8 +34,32 @@ const rankNextScores: Record<string, number> = {
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { user, networkStatus, pointsData, unreadCount, toggleParticipation } = useApp();
+  // Phase 1 context (mock fallback)
+  const { user: mockUser, networkStatus: mockNetworkStatus, pointsData: mockPointsData, unreadCount: mockUnreadCount, toggleParticipation: mockToggle } = useApp();
   const scrollY = useRef(new Animated.Value(0)).current;
+
+  // Real API data (when USE_REAL_API=true)
+  const authUser = useAuthStore(s => s.user);
+  const nodeStore = useNodeStore();
+  const { data: balanceData } = usePointsBalance();
+
+  // Merge mock and real data
+  const user = USE_REAL_API && authUser
+    ? { ...mockUser, name: authUser.name, rank: authUser.rank as any, supporter: authUser.is_supporter }
+    : mockUser;
+  const networkStatus = USE_REAL_API
+    ? { ...mockNetworkStatus, status: nodeStore.status, globalNodes: nodeStore.globalNodes, wifiConnected: nodeStore.wifiConnected, batteryLevel: nodeStore.batteryLevel }
+    : mockNetworkStatus;
+  const balance = USE_REAL_API && balanceData ? balanceData.balance : mockPointsData.balance;
+  const todayPoints = USE_REAL_API && balanceData ? balanceData.today : mockPointsData.today;
+  const unreadCount = mockUnreadCount; // TODO: connect to real notifications hook
+
+  const toggleParticipation = USE_REAL_API
+    ? () => {
+        if (nodeStore.isParticipating) nodeStore.stopParticipation();
+        else nodeStore.startParticipation();
+      }
+    : mockToggle;
 
   const headerOpacity = scrollY.interpolate({
     inputRange: [0, 60],
@@ -138,7 +166,7 @@ export default function HomeScreen() {
           <StatCard
             icon="flash"
             iconColor={Colors.gold}
-            value={`+${pointsData.today} pt`}
+            value={`+${todayPoints} pt`}
             label="今日の獲得"
             accentColor={Colors.gold}
             onPress={() => router.push('/(tabs)/points')}
@@ -147,7 +175,7 @@ export default function HomeScreen() {
           <StatCard
             icon="wallet"
             iconColor={Colors.cyan}
-            value={`${user.points.toLocaleString()} pt`}
+            value={`${balance.toLocaleString()} pt`}
             label="残高"
             accentColor={Colors.cyan}
             onPress={() => router.push('/(tabs)/points')}

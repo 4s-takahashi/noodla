@@ -14,10 +14,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius } from '../src/theme';
 import { Button, Input } from '../src/components/ui';
 import { useApp } from '../src/context/AppContext';
+import { useAuthStore } from '../src/stores/auth-store';
+import { USE_REAL_API } from '../src/api/config';
 
 export default function LoginScreen() {
   const router = useRouter();
-  const { login } = useApp();
+  const { login: mockLogin } = useApp();
+  const authStore = useAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -30,11 +33,20 @@ export default function LoginScreen() {
     }
     setLoading(true);
     setError('');
-    // Mock: simulate network delay
-    await new Promise(r => setTimeout(r, 1000));
-    login(email, password);
-    setLoading(false);
-    router.replace('/(tabs)/home');
+
+    try {
+      if (USE_REAL_API) {
+        await authStore.login(email, password);
+      } else {
+        await new Promise(r => setTimeout(r, 1000));
+        mockLogin(email, password);
+      }
+      router.replace('/(tabs)/home');
+    } catch (err: any) {
+      setError(err.message ?? 'ログインに失敗しました');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

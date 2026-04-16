@@ -1,11 +1,13 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius, Layout } from '../src/theme';
 import { useApp } from '../src/context/AppContext';
 import { formatDate } from '../src/utils/format';
+import { useNotifications, useMarkNotificationRead } from '../src/hooks/useNotifications';
+import { USE_REAL_API } from '../src/api/config';
 
 const typeColors: Record<string, string> = {
   rank_up: Colors.gold,
@@ -13,11 +15,44 @@ const typeColors: Record<string, string> = {
   maintenance: Colors.standby,
   admin: Colors.cyan,
   milestone: Colors.purpleLight,
+  system: Colors.cyan,
+};
+
+const typeIcons: Record<string, string> = {
+  rank_up: 'trophy',
+  points: 'star',
+  maintenance: 'construct',
+  admin: 'information-circle',
+  milestone: 'flame',
+  system: 'notifications',
 };
 
 export default function NotificationsScreen() {
   const router = useRouter();
-  const { notifications, markNotificationRead } = useApp();
+  const { notifications: mockNotifications, markNotificationRead: mockMarkRead } = useApp();
+  const { data: apiNotifData, isLoading } = useNotifications();
+  const markReadMutation = useMarkNotificationRead();
+
+  // Unified notification list
+  const notifications = USE_REAL_API && apiNotifData
+    ? apiNotifData.items.map(n => ({
+        id: n.id,
+        type: n.type,
+        title: n.title,
+        body: n.body,
+        date: n.created_at,
+        read: n.is_read,
+        icon: typeIcons[n.type] ?? 'notifications',
+      }))
+    : mockNotifications;
+
+  const handleMarkRead = (id: string) => {
+    if (USE_REAL_API) {
+      markReadMutation.mutate(id);
+    } else {
+      mockMarkRead(id);
+    }
+  };
 
   const unread = notifications.filter(n => !n.read);
   const read = notifications.filter(n => n.read);
@@ -28,7 +63,7 @@ export default function NotificationsScreen() {
       <TouchableOpacity
         key={notif.id}
         style={[styles.notifItem, !notif.read && styles.notifUnread]}
-        onPress={() => markNotificationRead(notif.id)}
+        onPress={() => handleMarkRead(notif.id)}
         activeOpacity={0.8}
       >
         <View style={[styles.notifIconContainer, { backgroundColor: `${color}15` }]}>
@@ -45,6 +80,16 @@ export default function NotificationsScreen() {
       </TouchableOpacity>
     );
   };
+
+  if (USE_REAL_API && isLoading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator color={Colors.cyan} size="large" />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -106,4 +151,5 @@ const styles = StyleSheet.create({
   notifDate: { ...Typography.caption, color: Colors.textMuted },
   empty: { alignItems: 'center', justifyContent: 'center', paddingVertical: Spacing[16] },
   emptyText: { ...Typography.body, color: Colors.textMuted, marginTop: Spacing[4] },
+  loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center' },
 });
