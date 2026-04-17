@@ -125,7 +125,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_points_earned_job
 
 ## 既知の制限・懸念
 
-1. **`test-app.ts` は本番DBを使用**: 統合テストが `data/noodla.db` に接続しており、マイグレーション状態に依存する。`participation-stats` テストで `job_events` テーブルが存在しないエラーが発生したため、graceful fallback を実装（`try-catch` で0を返す）。
+1. ~~**`test-app.ts` は本番DBを使用**: 統合テストが `data/noodla.db` に接続しており、マイグレーション状態に依存する。`participation-stats` テストで `job_events` テーブルが存在しないエラーが発生したため、graceful fallback を実装（`try-catch` で0を返す）。~~ **✅ 解消済み（Phase 6 後片付け）**: `server/src/db/index.ts` に `setDb()` / `resetDb()` によるDI差し替え機構を追加。`tests/helpers/test-app.ts` がモジュール評価時に `createTestDb()` でインメモリDB（`:memory:`）を生成し `setDb()` で本番DBと差し替えるよう改修。`rank.ts` の `participation-stats` エンドポイントの `try-catch` graceful fallback も削除し、全マイグレーション適用を前提とした正常系のみに整理した。
 
 2. **クエリ invalidate の遅延注入**: `ws-store.ts` の `setWsQueryInvalidate()` は React コンポーネントマウント時に手動設定が必要。Phase 7 以降で QueryClient の共有を整理することを推奨。
 
@@ -137,7 +137,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_points_earned_job
 
 1. **`ITransport` インターフェース切り出し**: `src/transport/` ディレクトリを作成し、現在の WebSocket クライアントを `WsTransport` として実装することで、WebRTC への移行がスムーズになる。
 
-2. **`test-app.ts` のインメモリDB化**: `createTestDb()` ヘルパーを HTTP 統合テストにも適用し、テスト間の状態汚染を防ぐ。
+2. ~~**`test-app.ts` のインメモリDB化**: `createTestDb()` ヘルパーを HTTP 統合テストにも適用し、テスト間の状態汚染を防ぐ。~~ **✅ 対応済み（Phase 6 後片付け）**
 
 3. **ランクダウンロジック**: 現状はランクアップのみ実装。設計書にランクダウンの要件があれば Phase 7 で対応。
 

@@ -118,23 +118,16 @@ rank.get('/participation-stats', async (c) => {
   const totalUptimeMinutes = nps.reduce((s, n) => s + n.total_uptime_minutes, 0);
   const todayUptimeMinutes = nps.reduce((s, n) => s + n.today_uptime_minutes, 0);
 
-  // job_events から件数と平均応答時間（テーブルが存在しない場合は graceful fallback）
-  let totalJobsCount = 0;
-  let avgResponseMs = 0;
-  try {
-    const jobStats = db
-      .select({ count: sql<number>`count(*)`, avg_ms: sql<number>`avg(response_ms)` })
-      .from(jobEvents)
-      .where(
-        eq(jobEvents.user_id, userId),
-      )
-      .get();
-    totalJobsCount = jobStats?.count ?? 0;
-    avgResponseMs = Math.round(jobStats?.avg_ms ?? 0);
-  } catch {
-    // job_events テーブルが未マイグレーションの場合はデフォルト値を使用
-    console.warn('[RankRoute] job_events query failed, using defaults');
-  }
+  // job_events から件数と平均応答時間
+  const jobStats = db
+    .select({ count: sql<number>`count(*)`, avg_ms: sql<number>`avg(response_ms)` })
+    .from(jobEvents)
+    .where(
+      eq(jobEvents.user_id, userId),
+    )
+    .get();
+  const totalJobsCount = jobStats?.count ?? 0;
+  const avgResponseMs = Math.round(jobStats?.avg_ms ?? 0);
 
   // rank_ledger から現在のスコア情報
   const rankEntry = db
