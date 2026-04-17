@@ -14,7 +14,7 @@
 | **シグナリング** | VPS 上の Hono WebSocket サーバーが中継・マッチング・ジョブ配布を担当 |
 | **準親ノード** | **Phase 5 では不要**。VPS が調停役。Phase 7+ で導入検討 |
 | **ジョブ最小単位** | JSON 1件（数百バイト）の疑似トークン生成タスク |
-| **早着優先** | 2端末に同一ジョブを送り、先着結果を採用。Phase 5 は記録のみ（スコア反映は Phase 6+） |
+| **早着優先** | 2端末に同一ジョブを送り、先着結果を採用。Phase 5 は実験用イベント記録のみ（本ポイント加算・スコア反映は Phase 6+） |
 | **iPhone 対応** | WebSocket は Expo Managed で動作。WebRTC は expo-dev-client（Prebuild）が必要 |
 | **Phase 5 の成功条件** | 2台のスマホで WebSocket 経由の疑似ジョブ往復が成功すること |
 
@@ -194,6 +194,7 @@ interface JobAssignMessage extends WsMessage {
 interface JobAcceptedMessage extends WsMessage {
   type: 'job_accepted';
   jobId: string;
+  // Phase 5: pointsEarned はテスト用カウンター。本ポイント加算は Phase 6+
   pointsEarned: number;
 }
 
@@ -450,8 +451,8 @@ function processPseudoTokenGen(payload: PseudoTokenGenPayload): PseudoTokenGenRe
 | **判定基準** | VPS に先に到着した結果を採用 |
 | **結果検証** | seed ベースで正解と比較（不正防止の最小版） |
 | **タイムアウト** | **5秒**（5秒以内に結果が来なければタイムアウト） |
-| **ポイント付与** | 採用 = 1pt、不採用 = 0pt、タイムアウト = 0pt |
-| **スコア反映** | Phase 5 では記録のみ（ランクスコアへの反映は Phase 6+） |
+| **ポイント付与** | Phase 5 では本ポイント加算なし。UI 上の仮ポイント表示またはテスト用カウンターに留める |
+| **スコア反映** | Phase 5 では実験用イベント記録のみ（ランクスコア・本ポイントへの反映は Phase 6+） |
 
 ### 早着判定フロー
 
@@ -467,11 +468,11 @@ function processPseudoTokenGen(payload: PseudoTokenGenPayload): PseudoTokenGenRe
   ↓
 [検証OK → 端末A を「採用」]
   ↓
-[端末A: job_accepted (1pt)]
+[端末A: job_accepted]
 [端末B: job_rejected (reason: 'late')]
   ↓
-[points_ledger に記録]
-[job_log テーブルに全結果を記録（分析用）]
+[job_log テーブルにイベント記録（分析用）]
+[※ Phase 5 では points_ledger への本ポイント加算は行わない]
 ```
 
 ### タイムアウト処理
@@ -633,7 +634,7 @@ interface JobLog {
 
 ```
 Phase 5: WebSocket 中継で最小疎通            ← 次の実装
-  ↓  2台の疑似ジョブ往復 + 早着優先 + ポイント
+  ↓  2台の疑似ジョブ往復 + 早着優先 + 実験用イベント記録（本ポイント加算なし）
 Phase 6: WebRTC DataChannel 追加 + ランクスコア自動化
   ↓  P2P 接続（WebSocket フォールバック付き）
 Phase 7: 準親ノード + 実 AI 推論の最小版
