@@ -10,6 +10,8 @@ import { StatCard } from '../src/components/cards/StatCard';
 import { InfoCard } from '../src/components/cards/InfoCard';
 import { getStatusLabel, getJobLabel, formatDuration } from '../src/utils/format';
 import { useWsStore } from '../src/stores/ws-store';
+import { useParticipationStats, formatUptimeMinutes, formatResponseMs } from '../src/hooks/useParticipationStats';
+import { USE_REAL_API } from '../src/api/config';
 
 export default function ParticipationScreen() {
   const router = useRouter();
@@ -19,6 +21,9 @@ export default function ParticipationScreen() {
   const wsStore = useWsStore();
   const wsConnected = wsStore.connectionState === 'connected';
   const wsParticipating = wsStore.networkStatus !== null && wsStore.currentJob !== null;
+
+  // Phase 6: 累積参加統計
+  const { data: participationStats } = useParticipationStats();
 
   const handleJoinNetwork = () => {
     if (!wsConnected) {
@@ -104,9 +109,9 @@ export default function ParticipationScreen() {
             <Text style={styles.wsStatsText}>
               処理: {wsStore.jobsProcessed}件 ／ 採用: {wsStore.jobsAccepted}件
             </Text>
-            {wsStore.experimentalPoints > 0 && (
+            {wsStore.sessionPoints > 0 && (
               <Text style={styles.wsExpPoints}>
-                実験ポイント: +{wsStore.experimentalPoints}
+                セッション獲得: +{wsStore.sessionPoints}pt
               </Text>
             )}
           </View>
@@ -179,7 +184,46 @@ export default function ParticipationScreen() {
           </View>
         )}
 
-        {/* Stats grid */}
+        {/* Phase 6: 累積参加統計 */}
+        {participationStats && (
+          <View style={styles.statsGrid}>
+            <Text style={styles.statsSectionTitle}>累積統計</Text>
+            <View style={styles.statsRow}>
+              <StatCard
+                icon="time"
+                iconColor={Colors.cyan}
+                value={formatUptimeMinutes(participationStats.today_uptime_minutes)}
+                label="本日の参加時間"
+                style={styles.statCard}
+              />
+              <StatCard
+                icon="calendar"
+                iconColor={Colors.purpleLight}
+                value={formatUptimeMinutes(participationStats.total_uptime_minutes)}
+                label="累積参加時間"
+                style={styles.statCard}
+              />
+            </View>
+            <View style={styles.statsRow}>
+              <StatCard
+                icon="checkmark-done"
+                iconColor={Colors.active}
+                value={`${participationStats.total_jobs_processed}件`}
+                label="累積ジョブ数"
+                style={styles.statCard}
+              />
+              <StatCard
+                icon="flash"
+                iconColor={Colors.standby}
+                value={formatResponseMs(participationStats.avg_response_ms)}
+                label="平均応答時間"
+                style={styles.statCard}
+              />
+            </View>
+          </View>
+        )}
+
+        {/* Stats grid (モックデータ) */}
         <View style={styles.statsGrid}>
           <View style={styles.statsRow}>
             <StatCard
@@ -432,6 +476,7 @@ const styles = StyleSheet.create({
   toggleBtnTextStop: { color: Colors.error },
   currentJob: { flexDirection: 'row', alignItems: 'center', gap: Spacing[2] },
   currentJobText: { ...Typography.bodySmall, color: Colors.cyan },
+  statsSectionTitle: { ...Typography.label, color: Colors.textSecondary, marginBottom: Spacing[2] },
   statsGrid: { gap: Spacing[3], marginBottom: Spacing[4] },
   statsRow: { flexDirection: 'row', gap: Spacing[3] },
   statCard: { flex: 1 },

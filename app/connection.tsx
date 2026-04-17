@@ -132,6 +132,10 @@ export default function ConnectionScreen() {
                 label: '再接続回数',
                 value: `${wsStore.reconnectCount}回`,
               },
+              {
+                label: 'セッション獲得pt',
+                value: wsStore.sessionPoints > 0 ? `+${wsStore.sessionPoints}pt` : '—',
+              },
             ].map(item => (
               <View key={item.label} style={styles.wsInfoRow}>
                 <Text style={styles.wsInfoLabel}>{item.label}</Text>

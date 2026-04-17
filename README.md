@@ -2,7 +2,7 @@
 
 > スマートフォンのアイドル時間を分散AIネットワークに提供し、ポイントを獲得してAI機能を利用できるサービス
 
-**現在のステータス: Phase 5 — WebSocket リアルタイム疎通 実装完了 / Phase 6 準備中**
+**現在のステータス: Phase 6 — 報酬実感の本実装 完了 / Phase 7 準備中**
 
 ---
 
@@ -248,7 +248,9 @@ noodla/
 │   ├── PHASE3-REPORT.md    # Phase 3 実装レポート
 │   ├── PHASE4-DESIGN.md    # Phase 4 設計書（WebSocket中継方式）
 │   ├── PHASE5-REPORT.md    # Phase 5 実装レポート（WebSocketリアルタイム疎通）
-│   └── PHASE5-TESTING.md   # Phase 5 テスト手順書
+│   ├── PHASE5-TESTING.md   # Phase 5 テスト手順書
+│   ├── PHASE6-REPORT.md    # Phase 6 実装レポート（報酬実感の本実装）
+│   └── PHASE6-TESTING.md   # Phase 6 テスト手順書
 │
 └── package.json            # ルート（フロントエンド）
 ```
@@ -264,7 +266,8 @@ noodla/
 | Phase 3 | ✅ 完了 | バックエンド実装 + フロント API 接続 |
 | Phase 4 | ✅ 完了 | 最小分散疎通の技術方針（WebSocket中継方式を選定） |
 | Phase 5 | ✅ 完了 | WebSocket リアルタイム疎通（2台スマホでの疑似ジョブ往復） |
-| Phase 6 | 📋 計画 | 実ノード処理・P2P移行（WebRTC DataChannel）・AI接続 |
+| Phase 6 | ✅ 完了 | 報酬実感の本実装（ポイント本運用 + ランク自動化 + WS状態見える化） |
+| Phase 7 | 📋 計画 | WebRTC DataChannel 移行・P2P疎通・ITransport抽象化 |
 
 ---
 

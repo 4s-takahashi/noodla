@@ -15,6 +15,12 @@ import type {
   ServerToClientMessage,
 } from '../services/ws-types';
 
+// TanStack Query の invalidate 用コールバック（遅延注入）
+let _queryInvalidate: ((keys: string[][]) => void) | null = null;
+export function setWsQueryInvalidate(fn: (keys: string[][]) => void) {
+  _queryInvalidate = fn;
+}
+
 // ── WS URL ───────────────────────────────────────────────────────────────────
 
 declare const __DEV__: boolean;
@@ -48,7 +54,8 @@ interface WsState {
   } | null;
   lastJobResult: RecentJobResult | null;
   recentJobResults: RecentJobResult[];
-  experimentalPoints: number; // テスト用カウンター
+  /** Phase 6: このセッションで獲得した累計ポイント数（DBへの永続化はサーバー側） */
+  sessionPoints: number;
   jobsProcessed: number;
   jobsAccepted: number;
   reconnectCount: number;
@@ -125,10 +132,14 @@ export const useWsStore = create<WsState>((set, get) => {
         set(state => ({
           lastJobResult: result,
           recentJobResults: [result, ...state.recentJobResults].slice(0, MAX_RECENT_JOBS),
-          experimentalPoints: state.experimentalPoints + msg.experimentalPoints,
+          // Phase 6: experimentalPoints → sessionPoints に改名
+          sessionPoints: state.sessionPoints + (msg.experimentalPoints ?? 0),
           jobsProcessed: state.jobsProcessed + 1,
           jobsAccepted: state.jobsAccepted + 1,
         }));
+
+        // Phase 6: points/balance と rank クエリを invalidate して最新値を取得
+        _queryInvalidate?.([['points', 'balance'], ['rank', 'current'], ['participation', 'stats']]);
         break;
       }
 
@@ -187,7 +198,7 @@ export const useWsStore = create<WsState>((set, get) => {
     currentJob: null,
     lastJobResult: null,
     recentJobResults: [],
-    experimentalPoints: 0,
+    sessionPoints: 0,
     jobsProcessed: 0,
     jobsAccepted: 0,
     reconnectCount: 0,

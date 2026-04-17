@@ -206,6 +206,7 @@ export default function HomeScreen() {
             <Ionicons name="hardware-chip-outline" size={14} color={Colors.cyan} />
             <Text style={styles.wsJobStatsText}>
               最近のジョブ処理: {wsStore.jobsProcessed}件（採用: {wsStore.jobsAccepted}件）
+              {wsStore.sessionPoints > 0 && `  +${wsStore.sessionPoints}pt獲得`}
             </Text>
           </View>
         )}
