@@ -33,7 +33,7 @@ points.get('/balance', async (c) => {
     .where(
       and(
         eq(pointsLedger.user_id, userId),
-        eq(pointsLedger.type, 'earned'),
+        eq(pointsLedger.type, 'earned_accepted'),
         gte(pointsLedger.created_at, todayStart.toISOString()),
       ),
     )
@@ -48,7 +48,7 @@ points.get('/balance', async (c) => {
     .where(
       and(
         eq(pointsLedger.user_id, userId),
-        eq(pointsLedger.type, 'earned'),
+        eq(pointsLedger.type, 'earned_accepted'),
         gte(pointsLedger.created_at, weekStart.toISOString()),
       ),
     )
@@ -63,7 +63,7 @@ points.get('/balance', async (c) => {
     .where(
       and(
         eq(pointsLedger.user_id, userId),
-        eq(pointsLedger.type, 'earned'),
+        eq(pointsLedger.type, 'earned_accepted'),
         gte(pointsLedger.created_at, monthStart.toISOString()),
       ),
     )

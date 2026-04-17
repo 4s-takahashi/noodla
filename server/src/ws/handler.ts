@@ -1,6 +1,9 @@
 import { v4 as uuidv4 } from 'uuid';
+import { eq, sql, and } from 'drizzle-orm';
 import type { WSContext } from 'hono/ws';
 import { verifyAccessToken } from '../lib/jwt.js';
+import { db } from '../db/index.js';
+import { nodeParticipationStates } from '../db/schema.js';
 import { peerManager } from './peer-manager.js';
 import { JobJudge } from './job-judge.js';
 import { JobScheduler } from './job-scheduler.js';
@@ -94,8 +97,57 @@ async function handleHello(
   };
   sendMessage(ws, connected);
 
+  // B4: NPS ステータスを 'waiting' に更新（セッション開始マーク）
+  updateNpsStatus(msg.installationId, payload.sub, 'waiting', true);
+
   console.log(`[WsHandler] Authenticated: ${msg.installationId} (userId: ${payload.sub})`);
   return true;
+}
+
+// ── B4: NPS (NodeParticipationState) 更新ヘルパー ────────────────────────────
+
+/**
+ * node_participation_states の status を更新する（upsert的に動作）
+ * installation_id + user_id のレコードが存在しない場合はスキップ（デバイス未登録端末）
+ */
+function updateNpsStatus(
+  installationId: string,
+  userId: string,
+  status: string,
+  sessionStart?: boolean,
+): void {
+  try {
+    if (sessionStart) {
+      db.update(nodeParticipationStates)
+        .set({
+          status,
+          session_start_at: sql`(datetime('now'))`,
+          updated_at: sql`(datetime('now'))`,
+        })
+        .where(
+          and(
+            eq(nodeParticipationStates.installation_id, installationId),
+            eq(nodeParticipationStates.user_id, userId),
+          ),
+        )
+        .run();
+    } else {
+      db.update(nodeParticipationStates)
+        .set({
+          status,
+          updated_at: sql`(datetime('now'))`,
+        })
+        .where(
+          and(
+            eq(nodeParticipationStates.installation_id, installationId),
+            eq(nodeParticipationStates.user_id, userId),
+          ),
+        )
+        .run();
+    }
+  } catch (err) {
+    console.error('[WsHandler] Failed to update NPS status:', err);
+  }
 }
 
 function handleJobResult(
@@ -166,15 +218,19 @@ export function createWsHandlers() {
           break;
 
         case 'join_network':
-          if (state.installationId) {
+          if (state.installationId && state.userId) {
             peerManager.setStatus(state.installationId, 'participating');
+            // B4: NPS ステータスを 'participating' に更新
+            updateNpsStatus(state.installationId, state.userId, 'participating');
             console.log(`[WsHandler] ${state.installationId} joined network`);
           }
           break;
 
         case 'leave_network':
-          if (state.installationId) {
+          if (state.installationId && state.userId) {
             peerManager.setStatus(state.installationId, 'waiting');
+            // B4: NPS ステータスを 'waiting' に更新
+            updateNpsStatus(state.installationId, state.userId, 'waiting');
             console.log(`[WsHandler] ${state.installationId} left network`);
           }
           break;
@@ -211,6 +267,10 @@ export function createWsHandlers() {
 
       if (state.installationId) {
         peerManager.removePeer(state.installationId);
+        // B4: NPS ステータスを 'offline' に更新
+        if (state.userId) {
+          updateNpsStatus(state.installationId, state.userId, 'offline');
+        }
       }
 
       console.log(`[WsHandler] Connection closed: ${state.installationId ?? 'unauthenticated'}`);

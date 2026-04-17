@@ -55,4 +55,23 @@ describe('Rank API', () => {
     expect(Array.isArray(body.items)).toBe(true);
     expect(body.total).toBeDefined();
   });
+
+  it('GET /api/v1/rank/participation-stats — returns participation stats for new user', async () => {
+    const res = await get('/api/v1/rank/participation-stats', accessToken);
+    const body = await res.json() as any;
+
+    expect(res.status).toBe(200);
+    expect(typeof body.total_uptime_minutes).toBe('number');
+    expect(typeof body.today_uptime_minutes).toBe('number');
+    expect(typeof body.total_jobs_processed).toBe('number');
+    expect(typeof body.avg_response_ms).toBe('number');
+    expect(typeof body.rank_score).toBe('number');
+    expect(body.rank).toBe('Bronze');
+    expect(body.next_rank_score).toBe(1_000);
+  });
+
+  it('GET /api/v1/rank/participation-stats — requires auth', async () => {
+    const res = await get('/api/v1/rank/participation-stats');
+    expect(res.status).toBe(401);
+  });
 });

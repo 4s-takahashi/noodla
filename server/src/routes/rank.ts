@@ -1,18 +1,19 @@
 import { Hono } from 'hono';
-import { eq, desc } from 'drizzle-orm';
+import { eq, desc, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { rankLedger, users } from '../db/schema.js';
+import { rankLedger, users, nodeParticipationStates, jobEvents } from '../db/schema.js';
 import { authMiddleware } from '../middleware/auth.js';
 
 const rank = new Hono();
 
 rank.use('*', authMiddleware);
 
+// Phase 6: 設計書セクション4に合わせた閾値
 const RANK_THRESHOLDS: Record<string, { prev: number; next: number; nextRank: string }> = {
-  Bronze:   { prev: 0,      next: 1000,  nextRank: 'Silver' },
-  Silver:   { prev: 1000,   next: 5000,  nextRank: 'Gold' },
-  Gold:     { prev: 5000,   next: 15000, nextRank: 'Platinum' },
-  Platinum: { prev: 15000,  next: 99999, nextRank: 'Platinum' },
+  Bronze:   { prev: 0,      next: 1_000,  nextRank: 'Silver' },
+  Silver:   { prev: 1_000,  next: 6_000,  nextRank: 'Gold' },
+  Gold:     { prev: 6_000,  next: 26_000, nextRank: 'Platinum' },
+  Platinum: { prev: 26_000, next: 999_999, nextRank: 'Platinum' },
 };
 
 // GET /rank — current rank
@@ -96,6 +97,62 @@ rank.get('/leaderboard', async (c) => {
       score: e.score,
     })),
     total: db.select().from(rankLedger).all().length,
+  });
+});
+
+// GET /rank/participation-stats — 累積参加統計
+rank.get('/participation-stats', async (c) => {
+  const userId = c.get('userId') as string;
+
+  // node_participation_states から uptime 取得
+  const nps = db
+    .select({
+      total_uptime_minutes: nodeParticipationStates.total_uptime_minutes,
+      today_uptime_minutes: nodeParticipationStates.today_uptime_minutes,
+      status: nodeParticipationStates.status,
+    })
+    .from(nodeParticipationStates)
+    .where(eq(nodeParticipationStates.user_id, userId))
+    .all();
+
+  const totalUptimeMinutes = nps.reduce((s, n) => s + n.total_uptime_minutes, 0);
+  const todayUptimeMinutes = nps.reduce((s, n) => s + n.today_uptime_minutes, 0);
+
+  // job_events から件数と平均応答時間（テーブルが存在しない場合は graceful fallback）
+  let totalJobsCount = 0;
+  let avgResponseMs = 0;
+  try {
+    const jobStats = db
+      .select({ count: sql<number>`count(*)`, avg_ms: sql<number>`avg(response_ms)` })
+      .from(jobEvents)
+      .where(
+        eq(jobEvents.user_id, userId),
+      )
+      .get();
+    totalJobsCount = jobStats?.count ?? 0;
+    avgResponseMs = Math.round(jobStats?.avg_ms ?? 0);
+  } catch {
+    // job_events テーブルが未マイグレーションの場合はデフォルト値を使用
+    console.warn('[RankRoute] job_events query failed, using defaults');
+  }
+
+  // rank_ledger から現在のスコア情報
+  const rankEntry = db
+    .select()
+    .from(rankLedger)
+    .where(eq(rankLedger.user_id, userId))
+    .get();
+
+  return c.json({
+    total_uptime_minutes: totalUptimeMinutes,
+    today_uptime_minutes: todayUptimeMinutes,
+    total_jobs_processed: totalJobsCount,
+    avg_response_ms: avgResponseMs,
+    rank_score: rankEntry?.score ?? 0,
+    rank: rankEntry?.rank ?? 'Bronze',
+    next_rank_score: rankEntry?.next_rank_score ?? 1_000,
+    consecutive_days: rankEntry?.consecutive_days ?? 0,
+    total_days_active: rankEntry?.total_days_active ?? 0,
   });
 });
 

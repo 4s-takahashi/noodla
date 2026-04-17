@@ -1,5 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
+import { eq, sql, and } from 'drizzle-orm';
 import type { WSContext } from 'hono/ws';
+import { db } from '../db/index.js';
+import { nodeParticipationStates } from '../db/schema.js';
 import type { NetworkStatusMessage } from './types.js';
 
 // ── ConnectedPeer ─────────────────────────────────────────────────────────────
@@ -174,7 +177,36 @@ export class PeerManager {
           this.removePeer(id);
         }
       }
+
+      // B5: participating ピアの today_uptime_minutes を加算
+      // HEARTBEAT_TIMEOUT_MS / 3 秒ごとに呼ばれるので、分単位に換算
+      const intervalMinutes = (this.HEARTBEAT_TIMEOUT_MS / 3) / 60_000;
+      for (const peer of this.peers.values()) {
+        if (peer.status === 'participating') {
+          this.incrementUptimeAsync(peer.installationId, peer.userId, intervalMinutes);
+        }
+      }
     }, this.HEARTBEAT_TIMEOUT_MS / 3);
+  }
+
+  /** today_uptime_minutes と total_uptime_minutes を非同期で加算する */
+  private incrementUptimeAsync(installationId: string, userId: string, incrementMinutes: number): void {
+    const increment = Math.max(0, Math.round(incrementMinutes * 10) / 10); // 小数点1桁
+    if (increment <= 0) return;
+
+    db.update(nodeParticipationStates)
+      .set({
+        today_uptime_minutes: sql`${nodeParticipationStates.today_uptime_minutes} + ${increment}`,
+        total_uptime_minutes: sql`${nodeParticipationStates.total_uptime_minutes} + ${increment}`,
+        updated_at: sql`(datetime('now'))`,
+      })
+      .where(
+        and(
+          eq(nodeParticipationStates.installation_id, installationId),
+          eq(nodeParticipationStates.user_id, userId),
+        ),
+      )
+      .run();
   }
 
   private startBroadcastInterval(): void {

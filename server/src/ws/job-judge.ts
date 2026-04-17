@@ -1,6 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import { db } from '../db/index.js';
 import { jobEvents } from '../db/schema.js';
+import { awardPoints } from '../services/points-service.js';
+import { updateRankScore } from '../services/rank-service.js';
 import type { PeerManager } from './peer-manager.js';
 import type { JobAcceptedMessage, JobRejectedMessage, JobResultMessage, PseudoJobPayload } from './types.js';
 
@@ -89,7 +91,17 @@ export class JobJudge {
       clearTimeout(entry.timeoutHandle);
 
       await this.recordEvent(entry, installationId, assignee.userId, 'accepted', message);
-      this.sendAccepted(installationId, jobId);
+
+      // Phase 6: ポイント加算 + ランクスコア更新
+      await this.awardPointsAndUpdateRank(
+        assignee.userId,
+        entry.jobId,
+        entry.jobType,
+        entry.payload.maxTokens,
+        message.processingMs,
+        installationId,
+        jobId,
+      );
 
       console.log(`[JobJudge] Job ${jobId} accepted from ${installationId} (${message.processingMs}ms)`);
 
@@ -183,9 +195,47 @@ export class JobJudge {
     }
   }
 
+  // ── Phase 6: ポイント加算 + ランクスコア更新 ───────────────────────────────
+
+  private async awardPointsAndUpdateRank(
+    userId: string,
+    jobId: string,
+    jobType: string,
+    maxTokens: number,
+    responseMs: number,
+    installationId: string,
+    wsJobId: string,
+  ): Promise<void> {
+    try {
+      const pointsResult = await awardPoints({ userId, jobId, jobType, maxTokens, responseMs });
+
+      if (pointsResult.skipped) {
+        console.log(`[JobJudge] Points skipped for ${userId}: ${pointsResult.skipReason}`);
+        // スキップでも job_accepted は送信する（0ptでも通知は届ける）
+        this.sendAccepted(installationId, wsJobId, 0);
+        return;
+      }
+
+      // ランクスコア更新
+      const rankResult = await updateRankScore({ userId, points: pointsResult.points });
+
+      this.sendAccepted(installationId, wsJobId, pointsResult.points);
+
+      if (rankResult.rankChanged) {
+        console.log(
+          `[JobJudge] User ${userId} ranked up: ${rankResult.oldRank} → ${rankResult.newRank}`,
+        );
+      }
+    } catch (err) {
+      console.error('[JobJudge] Error in awardPointsAndUpdateRank:', err);
+      // エラーでも job_accepted は送信する
+      this.sendAccepted(installationId, wsJobId, 0);
+    }
+  }
+
   // ── Message Sending ────────────────────────────────────────────────────────
 
-  private sendAccepted(installationId: string, jobId: string): void {
+  private sendAccepted(installationId: string, jobId: string, points: number): void {
     const peer = this.peerManager.getPeer(installationId);
     if (!peer) return;
 
@@ -194,7 +244,7 @@ export class JobJudge {
       ts: Date.now(),
       msgId: uuidv4(),
       jobId,
-      experimentalPoints: 1, // テスト用カウンター（本ポイントではない）
+      experimentalPoints: points, // Phase 6: 実際の獲得ポイント数
     };
 
     try {
