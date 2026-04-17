@@ -1,4 +1,5 @@
 import { serve } from '@hono/node-server';
+import { createNodeWebSocket } from '@hono/node-ws';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
@@ -9,8 +10,13 @@ import points from './routes/points.js';
 import rank from './routes/rank.js';
 import notificationsRouter from './routes/notifications.js';
 import usersRouter from './routes/users.js';
+import { createWsHandlers } from './ws/handler.js';
 
 const app = new Hono();
+
+// ── WebSocket setup ───────────────────────────────────────────────────────────
+
+const { injectWebSocket, upgradeWebSocket } = createNodeWebSocket({ app });
 
 // ── Global Middleware ─────────────────────────────────────────────────────────
 
@@ -40,6 +46,10 @@ app.route('/api/v1/rank', rank);
 app.route('/api/v1/notifications', notificationsRouter);
 app.route('/api/v1/users', usersRouter);
 
+// ── WebSocket Route ───────────────────────────────────────────────────────────
+
+app.get('/ws/v1/node', upgradeWebSocket((_c) => createWsHandlers()));
+
 // ── 404 handler ───────────────────────────────────────────────────────────────
 
 app.notFound((c) => c.json({ error: 'Not Found' }, 404));
@@ -53,13 +63,16 @@ app.onError((err, c) => {
 
 const PORT = Number(process.env.PORT ?? 3001);
 
-serve({
+const server = serve({
   fetch: app.fetch,
   port: PORT,
 }, (info) => {
   console.log(`🚀 Noodla API server running on http://localhost:${info.port}`);
   console.log(`   Health: http://localhost:${info.port}/health`);
   console.log(`   API:    http://localhost:${info.port}/api/v1`);
+  console.log(`   WS:     ws://localhost:${info.port}/ws/v1/node`);
 });
+
+injectWebSocket(server);
 
 export default app;

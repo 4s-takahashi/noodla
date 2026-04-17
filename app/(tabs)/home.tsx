@@ -20,6 +20,7 @@ import { Badge } from '../../src/components/ui/Badge';
 import { getStatusLabel } from '../../src/utils/format';
 import { useAuthStore } from '../../src/stores/auth-store';
 import { useNodeStore } from '../../src/stores/node-store';
+import { useWsStore } from '../../src/stores/ws-store';
 import { usePointsBalance } from '../../src/hooks/usePoints';
 import { USE_REAL_API } from '../../src/api/config';
 
@@ -42,6 +43,11 @@ export default function HomeScreen() {
   const authUser = useAuthStore(s => s.user);
   const nodeStore = useNodeStore();
   const { data: balanceData } = usePointsBalance();
+
+  // WebSocket state (Phase 5)
+  const wsStore = useWsStore();
+  const wsState = wsStore.connectionState;
+  const wsNetworkStatus = wsStore.networkStatus;
 
   // Merge mock and real data
   const user = USE_REAL_API && authUser
@@ -118,6 +124,32 @@ export default function HomeScreen() {
         {/* ── GLOBAL NODE COUNT (hero section) ── */}
         <View style={styles.heroSection}>
           <View style={styles.heroGlow} />
+
+          {/* WebSocket 接続状態バッジ */}
+          <View style={styles.wsStatusRow}>
+            <View style={[
+              styles.wsStatusDot,
+              { backgroundColor:
+                wsState === 'connected' ? Colors.active
+                : wsState === 'connecting' || wsState === 'reconnecting' ? Colors.standby
+                : Colors.error
+              }
+            ]} />
+            <Text style={[
+              styles.wsStatusText,
+              { color:
+                wsState === 'connected' ? Colors.active
+                : wsState === 'connecting' || wsState === 'reconnecting' ? Colors.standby
+                : Colors.textMuted
+              }
+            ]}>
+              {wsState === 'connected' ? 'WS 接続中'
+                : wsState === 'connecting' ? 'WS 接続中...'
+                : wsState === 'reconnecting' ? 'WS 再接続中...'
+                : 'WS 未接続'}
+            </Text>
+          </View>
+
           <View style={styles.globeRow}>
             <View style={styles.globeIconWrapper}>
               <Ionicons name="globe" size={36} color={Colors.cyan} />
@@ -126,9 +158,16 @@ export default function HomeScreen() {
             </View>
             <View style={styles.heroText}>
               <Text style={styles.nodeCountHero}>
-                {networkStatus.globalNodes.toLocaleString()}
+                {wsNetworkStatus
+                  ? wsNetworkStatus.totalOnline.toLocaleString()
+                  : networkStatus.globalNodes.toLocaleString()}
               </Text>
-              <Text style={styles.nodeCountLabel}>nodes worldwide</Text>
+              <Text style={styles.nodeCountLabel}>nodes online</Text>
+              {wsNetworkStatus && (
+                <Text style={styles.nodeCountSub}>
+                  参加中: {wsNetworkStatus.totalParticipating} 台
+                </Text>
+              )}
             </View>
           </View>
 
@@ -160,6 +199,16 @@ export default function HomeScreen() {
             )}
           </View>
         </View>
+
+        {/* ── WS JOB STATS ── */}
+        {wsStore.jobsProcessed > 0 && (
+          <View style={styles.wsJobStats}>
+            <Ionicons name="hardware-chip-outline" size={14} color={Colors.cyan} />
+            <Text style={styles.wsJobStatsText}>
+              最近のジョブ処理: {wsStore.jobsProcessed}件（採用: {wsStore.jobsAccepted}件）
+            </Text>
+          </View>
+        )}
 
         {/* ── POINT STATS ── */}
         <View style={styles.statsRow}>
@@ -418,6 +467,42 @@ const styles = StyleSheet.create({
     ...Typography.bodySmall,
     color: Colors.textSecondary,
     marginTop: 2,
+  },
+  nodeCountSub: {
+    ...Typography.caption,
+    color: Colors.cyan,
+    marginTop: 2,
+  },
+  wsStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing[2],
+    marginBottom: Spacing[3],
+  },
+  wsStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  wsStatusText: {
+    ...Typography.caption,
+    fontWeight: '600',
+  },
+  wsJobStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing[2],
+    backgroundColor: 'rgba(0,210,255,0.06)',
+    borderRadius: BorderRadius.md,
+    paddingHorizontal: Spacing[3],
+    paddingVertical: Spacing[2],
+    marginBottom: Spacing[4],
+    borderWidth: 1,
+    borderColor: 'rgba(0,210,255,0.1)',
+  },
+  wsJobStatsText: {
+    ...Typography.caption,
+    color: Colors.cyan,
   },
   statusRow: {
     flexDirection: 'row',

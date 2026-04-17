@@ -5,6 +5,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Typography, Spacing, BorderRadius, Layout } from '../src/theme';
 import { mockConnectionInfo } from '../src/mock/network';
+import { useWsStore } from '../src/stores/ws-store';
 
 const strengthLabel: Record<string, string> = {
   excellent: '非常に良好', good: '良好', fair: '普通', poor: '弱い',
@@ -13,9 +14,25 @@ const strengthColor: Record<string, string> = {
   excellent: Colors.active, good: '#86efac', fair: Colors.standby, poor: Colors.error,
 };
 
+function formatDate(date: Date | null): string {
+  if (!date) return '—';
+  return date.toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+}
+
+function formatDuration(from: Date | null): string {
+  if (!from) return '—';
+  const seconds = Math.floor((Date.now() - from.getTime()) / 1000);
+  if (seconds < 60) return `${seconds}秒`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}分`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}時間${minutes % 60}分`;
+}
+
 export default function ConnectionScreen() {
   const router = useRouter();
   const conn = mockConnectionInfo;
+  const wsStore = useWsStore();
 
   return (
     <SafeAreaView style={styles.container}>
@@ -87,6 +104,43 @@ export default function ConnectionScreen() {
           </View>
         )}
 
+        {/* WebSocket 接続情報 (Phase 5) */}
+        <View style={styles.wsCard}>
+          <Text style={styles.wsCardTitle}>WebSocket 接続状態</Text>
+          <View style={styles.wsInfoGrid}>
+            {[
+              {
+                label: '接続状態',
+                value: wsStore.connectionState === 'connected' ? '🟢 接続中'
+                  : wsStore.connectionState === 'connecting' ? '🟡 接続中...'
+                  : wsStore.connectionState === 'reconnecting' ? '🟡 再接続中...'
+                  : '🔴 未接続',
+              },
+              {
+                label: '接続先',
+                value: wsStore.serverUrl || '—',
+              },
+              {
+                label: '接続時間',
+                value: formatDuration(wsStore.connectedAt),
+              },
+              {
+                label: '最終heartbeat',
+                value: formatDate(wsStore.lastHeartbeatAt),
+              },
+              {
+                label: '再接続回数',
+                value: `${wsStore.reconnectCount}回`,
+              },
+            ].map(item => (
+              <View key={item.label} style={styles.wsInfoRow}>
+                <Text style={styles.wsInfoLabel}>{item.label}</Text>
+                <Text style={styles.wsInfoValue} numberOfLines={1}>{item.value}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
         {/* Improvement hints */}
         <View style={styles.hintsCard}>
           <Text style={styles.hintsTitle}>改善のヒント</Text>
@@ -129,4 +183,42 @@ const styles = StyleSheet.create({
   hintRow: { flexDirection: 'row', alignItems: 'flex-start', gap: Spacing[3] },
   hintDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: Colors.cyan, marginTop: 7, flexShrink: 0 },
   hintText: { ...Typography.body, color: Colors.textSecondary, flex: 1, lineHeight: 22 },
+
+  // WebSocket card
+  wsCard: {
+    backgroundColor: 'rgba(0,210,255,0.04)',
+    borderRadius: BorderRadius.lg,
+    padding: Spacing[5],
+    borderWidth: 1,
+    borderColor: 'rgba(0,210,255,0.15)',
+    marginBottom: Spacing[4],
+    gap: Spacing[3],
+  },
+  wsCardTitle: {
+    ...Typography.h4,
+    color: Colors.textPrimary,
+  },
+  wsInfoGrid: {
+    gap: Spacing[2],
+  },
+  wsInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: Spacing[1],
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  wsInfoLabel: {
+    ...Typography.bodySmall,
+    color: Colors.textMuted,
+    flexShrink: 0,
+  },
+  wsInfoValue: {
+    ...Typography.bodySmall,
+    color: Colors.textSecondary,
+    flex: 1,
+    textAlign: 'right',
+    marginLeft: Spacing[3],
+  },
 });

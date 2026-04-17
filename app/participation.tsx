@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,10 +9,28 @@ import { Badge } from '../src/components/ui/Badge';
 import { StatCard } from '../src/components/cards/StatCard';
 import { InfoCard } from '../src/components/cards/InfoCard';
 import { getStatusLabel, getJobLabel, formatDuration } from '../src/utils/format';
+import { useWsStore } from '../src/stores/ws-store';
 
 export default function ParticipationScreen() {
   const router = useRouter();
   const { networkStatus, toggleParticipation } = useApp();
+
+  // WebSocket state (Phase 5)
+  const wsStore = useWsStore();
+  const wsConnected = wsStore.connectionState === 'connected';
+  const wsParticipating = wsStore.networkStatus !== null && wsStore.currentJob !== null;
+
+  const handleJoinNetwork = () => {
+    if (!wsConnected) {
+      wsStore.connect();
+    } else {
+      wsStore.joinNetwork();
+    }
+  };
+
+  const handleLeaveNetwork = () => {
+    wsStore.leaveNetwork();
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -24,6 +42,74 @@ export default function ParticipationScreen() {
           </TouchableOpacity>
           <Text style={styles.title}>参加状況</Text>
           <View style={{ width: 40 }} />
+        </View>
+
+        {/* WebSocket 参加コントロール (Phase 5) */}
+        <View style={styles.wsCard}>
+          <View style={styles.wsCardHeader}>
+            <View style={styles.wsStatusIndicator}>
+              <View style={[
+                styles.wsStatusDot,
+                {
+                  backgroundColor:
+                    wsStore.connectionState === 'connected' ? Colors.active
+                    : wsStore.connectionState === 'reconnecting' || wsStore.connectionState === 'connecting' ? Colors.standby
+                    : Colors.error
+                }
+              ]} />
+              <Text style={styles.wsStatusLabel}>
+                {wsStore.connectionState === 'connected' ? '接続中'
+                  : wsStore.connectionState === 'connecting' ? '接続中...'
+                  : wsStore.connectionState === 'reconnecting' ? '再接続中...'
+                  : '未接続'}
+              </Text>
+            </View>
+            <View style={styles.wsActions}>
+              <TouchableOpacity
+                style={[styles.wsBtn, styles.wsBtnJoin]}
+                onPress={handleJoinNetwork}
+              >
+                <Ionicons name="play-circle" size={16} color={Colors.active} />
+                <Text style={[styles.wsBtnText, { color: Colors.active }]}>参加する</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.wsBtn, styles.wsBtnLeave]}
+                onPress={handleLeaveNetwork}
+              >
+                <Ionicons name="stop-circle" size={16} color={Colors.error} />
+                <Text style={[styles.wsBtnText, { color: Colors.error }]}>停止する</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* ネットワーク状況 */}
+          {wsStore.networkStatus && (
+            <View style={styles.wsNetworkInfo}>
+              <Text style={styles.wsNetworkInfoText}>
+                オンライン: {wsStore.networkStatus.totalOnline}台 ／ 参加中: {wsStore.networkStatus.totalParticipating}台
+              </Text>
+            </View>
+          )}
+
+          {/* ジョブ処理中インジケーター */}
+          {wsStore.currentJob && (
+            <View style={styles.jobProcessing}>
+              <ActivityIndicator size="small" color={Colors.cyan} />
+              <Text style={styles.jobProcessingText}>ジョブ処理中...</Text>
+            </View>
+          )}
+
+          {/* 統計 */}
+          <View style={styles.wsStats}>
+            <Text style={styles.wsStatsText}>
+              処理: {wsStore.jobsProcessed}件 ／ 採用: {wsStore.jobsAccepted}件
+            </Text>
+            {wsStore.experimentalPoints > 0 && (
+              <Text style={styles.wsExpPoints}>
+                実験ポイント: +{wsStore.experimentalPoints}
+              </Text>
+            )}
+          </View>
         </View>
 
         {/* Status */}
@@ -65,6 +151,33 @@ export default function ParticipationScreen() {
             </View>
           )}
         </View>
+
+        {/* 直近のジョブ結果リスト */}
+        {wsStore.recentJobResults.length > 0 && (
+          <View style={styles.recentJobsSection}>
+            <Text style={styles.recentJobsTitle}>直近のジョブ結果</Text>
+            {wsStore.recentJobResults.slice(0, 5).map((result, idx) => (
+              <View key={`${result.jobId}-${idx}`} style={styles.recentJobRow}>
+                <View style={[
+                  styles.recentJobDot,
+                  {
+                    backgroundColor: result.accepted ? Colors.active
+                      : result.reason === 'timeout' ? Colors.standby
+                      : Colors.error
+                  }
+                ]} />
+                <Text style={styles.recentJobStatus}>
+                  {result.accepted ? '✅ 採用'
+                    : result.reason === 'timeout' ? '⏱ タイムアウト'
+                    : '❌ 遅延'}
+                </Text>
+                <Text style={styles.recentJobId}>
+                  {result.jobId.slice(0, 8)}...
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
 
         {/* Stats grid */}
         <View style={styles.statsGrid}>
@@ -165,6 +278,132 @@ const styles = StyleSheet.create({
   },
   backBtn: { padding: Spacing[1] },
   title: { ...Typography.h3, color: Colors.textPrimary },
+
+  // WebSocket Card (Phase 5)
+  wsCard: {
+    backgroundColor: 'rgba(0,210,255,0.04)',
+    borderRadius: BorderRadius.lg,
+    padding: Spacing[4],
+    borderWidth: 1,
+    borderColor: 'rgba(0,210,255,0.15)',
+    marginBottom: Spacing[4],
+    gap: Spacing[3],
+  },
+  wsCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  wsStatusIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing[2],
+  },
+  wsStatusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  wsStatusLabel: {
+    ...Typography.bodySmall,
+    color: Colors.textSecondary,
+    fontWeight: '600',
+  },
+  wsActions: {
+    flexDirection: 'row',
+    gap: Spacing[2],
+  },
+  wsBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing[1],
+    paddingHorizontal: Spacing[3],
+    paddingVertical: Spacing[2],
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+  },
+  wsBtnJoin: {
+    backgroundColor: 'rgba(34,197,94,0.08)',
+    borderColor: 'rgba(34,197,94,0.25)',
+  },
+  wsBtnLeave: {
+    backgroundColor: 'rgba(239,68,68,0.08)',
+    borderColor: 'rgba(239,68,68,0.25)',
+  },
+  wsBtnText: {
+    ...Typography.caption,
+    fontWeight: '600',
+  },
+  wsNetworkInfo: {},
+  wsNetworkInfoText: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+  },
+  jobProcessing: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing[2],
+    backgroundColor: 'rgba(0,210,255,0.08)',
+    borderRadius: BorderRadius.sm,
+    padding: Spacing[2],
+  },
+  jobProcessingText: {
+    ...Typography.caption,
+    color: Colors.cyan,
+  },
+  wsStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  wsStatsText: {
+    ...Typography.caption,
+    color: Colors.textMuted,
+  },
+  wsExpPoints: {
+    ...Typography.caption,
+    color: Colors.gold,
+    fontWeight: '700',
+  },
+
+  // Recent jobs
+  recentJobsSection: {
+    backgroundColor: Colors.bgCard,
+    borderRadius: BorderRadius.lg,
+    padding: Spacing[4],
+    borderWidth: 1,
+    borderColor: Colors.border,
+    marginBottom: Spacing[4],
+    gap: Spacing[2],
+  },
+  recentJobsTitle: {
+    ...Typography.h4,
+    color: Colors.textPrimary,
+    marginBottom: Spacing[2],
+  },
+  recentJobRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing[2],
+    paddingVertical: Spacing[1],
+  },
+  recentJobDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    flexShrink: 0,
+  },
+  recentJobStatus: {
+    ...Typography.caption,
+    color: Colors.textSecondary,
+    flex: 1,
+  },
+  recentJobId: {
+    ...Typography.caption,
+    color: Colors.textMuted,
+    fontFamily: 'monospace',
+  },
+
   statusCard: {
     backgroundColor: Colors.bgCard,
     borderRadius: BorderRadius.lg,

@@ -155,8 +155,36 @@ export const refreshTokens = sqliteTable(
   }),
 );
 
+// ── JobEvents ─────────────────────────────────────────────────────────────────
+
+export const jobEvents = sqliteTable(
+  'job_events',
+  {
+    id: text('id').primaryKey(),
+    job_id: text('job_id').notNull(),
+    job_type: text('job_type').notNull(),
+    payload: text('payload').notNull(), // JSON
+    user_id: text('user_id').notNull(),
+    installation_id: text('installation_id').notNull(),
+    assigned_at: text('assigned_at').notNull(),
+    responded_at: text('responded_at'),
+    result_status: text('result_status').notNull(), // 'accepted' | 'rejected' | 'timeout'
+    response_ms: integer('response_ms'),
+    result_data: text('result_data'), // JSON
+    created_at: text('created_at').notNull().default(sql`(datetime('now'))`),
+  },
+  (t) => ({
+    jobIdIdx: index('idx_job_events_job_id').on(t.job_id),
+    userIdIdx: index('idx_job_events_user_id').on(t.user_id),
+    statusIdx: index('idx_job_events_status').on(t.result_status),
+    createdAtIdx: index('idx_job_events_created_at').on(t.created_at),
+  }),
+);
+
 // ── Type exports ──────────────────────────────────────────────────────────────
 
+export type JobEvent = typeof jobEvents.$inferSelect;
+export type NewJobEvent = typeof jobEvents.$inferInsert;
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Device = typeof devices.$inferSelect;
