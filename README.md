@@ -2,7 +2,7 @@
 
 > スマートフォンのアイドル時間を分散AIネットワークに提供し、ポイントを獲得してAI機能を利用できるサービス
 
-**現在のステータス: Phase 6 — 報酬実感の本実装 完了 / Phase 7 準備中**
+**現在のステータス: Phase 7 — ITransport 抽象化 + Push 通知 完了 / Phase 8 準備中**
 
 ---
 
@@ -216,15 +216,23 @@ noodla/
 │   ├── api/                # ★ Phase 3: API クライアント
 │   │   ├── client.ts       #   fetch ラッパー（401自動リトライ）
 │   │   └── config.ts       #   API切替フラグ
+│   ├── transport/          # ★ Phase 7-A: トランスポート抽象化
+│   │   ├── ITransport.ts   #   インターフェース定義
+│   │   ├── WsTransport.ts  #   WebSocket 実装
+│   │   └── index.ts        #   singleton export
+│   ├── lib/                # ★ Phase 7-A: 共有ライブラリ
+│   │   └── queryClient.ts  #   QueryClient singleton
 │   ├── stores/             # ★ Phase 3: Zustand ストア
 │   │   ├── auth-store.ts   #   認証状態
 │   │   ├── node-store.ts   #   ノード参加状態
-│   │   └── installation-store.ts  # installation_id
+│   │   ├── installation-store.ts  # installation_id
+│   │   └── ws-store.ts     #   WebSocket 状態（ITransport 経由）
 │   ├── hooks/              # ★ Phase 3: TanStack Query hooks
 │   │   ├── usePoints.ts
 │   │   ├── useRank.ts
 │   │   ├── useNotifications.ts
-│   │   └── useDevices.ts
+│   │   ├── useDevices.ts
+│   │   └── useInAppNotification.ts # ★ Phase 7-B: WS 通知受信フック
 │   ├── components/         # 再利用UIコンポーネント
 │   ├── context/            # AppContext（Phase 1 残、段階的に移行）
 │   ├── mock/               # モックデータ（API切替で共存）
@@ -250,7 +258,9 @@ noodla/
 │   ├── PHASE5-REPORT.md    # Phase 5 実装レポート（WebSocketリアルタイム疎通）
 │   ├── PHASE5-TESTING.md   # Phase 5 テスト手順書
 │   ├── PHASE6-REPORT.md    # Phase 6 実装レポート（報酬実感の本実装）
-│   └── PHASE6-TESTING.md   # Phase 6 テスト手順書
+│   ├── PHASE6-TESTING.md   # Phase 6 テスト手順書
+│   ├── PHASE7-DESIGN.md    # Phase 7 設計書（ITransport + Push通知）
+│   └── PHASE7-REPORT.md    # Phase 7 実装レポート
 │
 └── package.json            # ルート（フロントエンド）
 ```
@@ -267,7 +277,8 @@ noodla/
 | Phase 4 | ✅ 完了 | 最小分散疎通の技術方針（WebSocket中継方式を選定） |
 | Phase 5 | ✅ 完了 | WebSocket リアルタイム疎通（2台スマホでの疑似ジョブ往復） |
 | Phase 6 | ✅ 完了 | 報酬実感の本実装（ポイント本運用 + ランク自動化 + WS状態見える化） |
-| Phase 7 | 📋 計画 | WebRTC DataChannel 移行・P2P疎通・ITransport抽象化 |
+| Phase 7 | ✅ 完了 | ITransport 抽象化 + Push 通知（WS リアルタイム + expo-notifications） |
+| Phase 8 | 📋 計画 | WebRTC DataChannel 移行・Expo Push API サーバーサイド連携 |
 
 ---
 
