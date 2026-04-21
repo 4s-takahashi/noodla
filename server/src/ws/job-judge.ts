@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
+import { eq, and, desc } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { jobEvents } from '../db/schema.js';
+import { jobEvents, notifications } from '../db/schema.js';
 import { awardPoints } from '../services/points-service.js';
 import { updateRankScore } from '../services/rank-service.js';
 import type { PeerManager } from './peer-manager.js';
@@ -225,11 +226,62 @@ export class JobJudge {
         console.log(
           `[JobJudge] User ${userId} ranked up: ${rankResult.oldRank} → ${rankResult.newRank}`,
         );
+        // Phase 7-B: ランクアップ時に WS 経由でリアルタイム通知を送信
+        await this.sendRankUpNotificationWs(userId, rankResult.newRank);
       }
     } catch (err) {
       console.error('[JobJudge] Error in awardPointsAndUpdateRank:', err);
       // エラーでも job_accepted は送信する
       this.sendAccepted(installationId, wsJobId, 0);
+    }
+  }
+
+  // ── Phase 7-B: WS Notification Push ──────────────────────────────────────
+
+  private readonly RANK_UP_MESSAGES: Record<string, { title: string; body: string }> = {
+    Silver: {
+      title: '🥈 シルバーランクに昇格！',
+      body: 'おめでとうございます！シルバーランクに昇格しました。ポイント獲得量が1.2倍になります。',
+    },
+    Gold: {
+      title: '🥇 ゴールドランクに昇格！',
+      body: 'おめでとうございます！ゴールドランクに昇格しました。ポイント獲得量が1.5倍になります。',
+    },
+    Platinum: {
+      title: '💎 プラチナランクに昇格！',
+      body: 'おめでとうございます！最高位のプラチナランクに昇格しました。ポイント獲得量が2倍になります！',
+    },
+  };
+
+  /**
+   * ランクアップ時に DB から最新の通知 ID を取得し、WS で push する。
+   * DB 書き込みは rank-service.ts の createRankUpNotification() が行う。
+   */
+  private async sendRankUpNotificationWs(userId: string, newRank: string): Promise<void> {
+    const msg = this.RANK_UP_MESSAGES[newRank];
+    if (!msg) return;
+
+    try {
+      // rank-service が notifications に書き込んだ最新レコードを取得
+      const latestNotif = db
+        .select()
+        .from(notifications)
+        .where(and(eq(notifications.user_id, userId), eq(notifications.type, 'rank_up')))
+        .orderBy(desc(notifications.created_at))
+        .limit(1)
+        .get();
+
+      const notifId = latestNotif?.id ?? uuidv4();
+
+      this.peerManager.sendNotificationToUser(
+        userId,
+        notifId,
+        'rank_up',
+        msg.title,
+        msg.body,
+      );
+    } catch (err) {
+      console.error('[JobJudge] Failed to send rank-up WS notification:', err);
     }
   }
 

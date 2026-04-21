@@ -179,6 +179,13 @@ export const useWsStore = create<WsState>((set, get) => {
         break;
       }
 
+      case 'notification_push': {
+        // Phase 7-B: リアルタイム通知受信 → useInAppNotification フックで表示
+        // ここでも notifications クエリを invalidate しておく（二重呼び出しは無害）
+        queryClient.invalidateQueries({ queryKey: ['notifications'] });
+        break;
+      }
+
       default:
         break;
     }

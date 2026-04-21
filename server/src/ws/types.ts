@@ -114,6 +114,15 @@ export type ClientToServerMessage =
   | JobResultMessage
   | PingMessage;
 
+// Phase 7-B: サーバーからのプッシュ通知メッセージ
+export interface NotificationPushMessage extends WsMessageBase {
+  type: 'notification_push';
+  notificationId: string;
+  notifType: string; // 'rank_up' | 'points' | 'milestone' | 'system' など
+  title: string;
+  body: string;
+}
+
 export type ServerToClientMessage =
   | ConnectedMessage
   | NetworkStatusMessage
@@ -121,6 +130,7 @@ export type ServerToClientMessage =
   | JobAcceptedMessage
   | JobRejectedMessage
   | PongMessage
-  | ErrorMessage;
+  | ErrorMessage
+  | NotificationPushMessage;
 
 export type WsMessage = ClientToServerMessage | ServerToClientMessage;

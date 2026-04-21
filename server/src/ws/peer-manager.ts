@@ -3,7 +3,7 @@ import { eq, sql, and } from 'drizzle-orm';
 import type { WSContext } from 'hono/ws';
 import { db } from '../db/index.js';
 import { nodeParticipationStates } from '../db/schema.js';
-import type { NetworkStatusMessage } from './types.js';
+import type { NetworkStatusMessage, NotificationPushMessage } from './types.js';
 
 // ── ConnectedPeer ─────────────────────────────────────────────────────────────
 
@@ -121,6 +121,48 @@ export class PeerManager {
     const peer = this.peers.get(installationId);
     if (peer) {
       peer.pendingJobs.delete(jobId);
+    }
+  }
+
+  // ── Notification Push ─────────────────────────────────────────────────────
+
+  /**
+   * 指定した userId に接続中のすべてのピアへ notification_push メッセージを送信する。
+   * Phase 7-B: ランクアップなどのリアルタイム通知に使用。
+   */
+  sendNotificationToUser(
+    userId: string,
+    notificationId: string,
+    notifType: string,
+    title: string,
+    body: string,
+  ): void {
+    const msg: NotificationPushMessage = {
+      type: 'notification_push',
+      ts: Date.now(),
+      msgId: uuidv4(),
+      notificationId,
+      notifType,
+      title,
+      body,
+    };
+
+    const payload = JSON.stringify(msg);
+    let sent = 0;
+
+    for (const peer of this.peers.values()) {
+      if (peer.userId === userId) {
+        try {
+          peer.ws.send(payload);
+          sent++;
+        } catch (err) {
+          console.error(`[PeerManager] Failed to send notification to ${peer.installationId}:`, err);
+        }
+      }
+    }
+
+    if (sent > 0) {
+      console.log(`[PeerManager] Sent notification ${notifType} to userId ${userId} (${sent} peer(s))`);
     }
   }
 

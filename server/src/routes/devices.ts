@@ -182,6 +182,35 @@ devicesRouter.patch('/:id', async (c) => {
   return c.json({ message: 'updated', status: parsed.data.status });
 });
 
+// PATCH /devices/:id/push-token — update push token for expo-notifications
+// Phase 7-B: iOS/Android のプッシュトークンを登録・更新する
+devicesRouter.patch('/:id/push-token', async (c) => {
+  const userId = c.get('userId') as string;
+  const installationId = c.req.param('id');
+  const body = await c.req.json().catch(() => null);
+
+  if (!body || typeof body.push_token !== 'string') {
+    return c.json({ error: 'push_token が必要です' }, 422);
+  }
+
+  const device = db
+    .select()
+    .from(devices)
+    .where(and(eq(devices.user_id, userId), eq(devices.installation_id, installationId)))
+    .get();
+
+  if (!device) {
+    return c.json({ error: 'デバイスが見つかりません' }, 404);
+  }
+
+  db.update(devices)
+    .set({ push_token: body.push_token, last_seen_at: new Date().toISOString() })
+    .where(eq(devices.id, device.id))
+    .run();
+
+  return c.json({ message: 'プッシュトークンを更新しました' });
+});
+
 // DELETE /devices/:id — remove device
 devicesRouter.delete('/:id', async (c) => {
   const userId = c.get('userId') as string;
