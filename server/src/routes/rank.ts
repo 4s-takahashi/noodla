@@ -3,6 +3,7 @@ import { eq, desc, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { rankLedger, users, nodeParticipationStates, jobEvents } from '../db/schema.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { checkAndApplyRankDecay } from '../services/rank-service.js';
 
 const rank = new Hono();
 
@@ -19,6 +20,9 @@ const RANK_THRESHOLDS: Record<string, { prev: number; next: number; nextRank: st
 // GET /rank — current rank
 rank.get('/', async (c) => {
   const userId = c.get('userId') as string;
+
+  // Phase 7-C: ランクダウンデケイチェック（非活動期間が長い場合にスコア減少）
+  await checkAndApplyRankDecay(userId);
 
   const entry = db
     .select()

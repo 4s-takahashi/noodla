@@ -1,12 +1,13 @@
 import { v4 as uuidv4 } from 'uuid';
-import { eq, sql, and } from 'drizzle-orm';
+import { eq, sql, and, desc } from 'drizzle-orm';
 import type { WSContext } from 'hono/ws';
 import { verifyAccessToken } from '../lib/jwt.js';
 import { db } from '../db/index.js';
-import { nodeParticipationStates } from '../db/schema.js';
+import { nodeParticipationStates, notifications } from '../db/schema.js';
 import { peerManager } from './peer-manager.js';
 import { JobJudge } from './job-judge.js';
 import { JobScheduler } from './job-scheduler.js';
+import { checkAndApplyRankDecay } from '../services/rank-service.js';
 import type {
   ClientToServerMessage,
   ConnectedMessage,
@@ -100,8 +101,71 @@ async function handleHello(
   // B4: NPS ステータスを 'waiting' に更新（セッション開始マーク）
   updateNpsStatus(msg.installationId, payload.sub, 'waiting', true);
 
+  // Phase 7-C: 接続時にランクダウンデケイチェック（非同期・エラーは握りつぶす）
+  checkAndApplyRankDecay(payload.sub).then(async (decayResult) => {
+    if (decayResult.rankChanged) {
+      console.log(
+        `[WsHandler] Rank decay down for ${payload.sub}: ` +
+        `${decayResult.oldRank} → ${decayResult.newRank}`,
+      );
+      // WS push 通知送信
+      await sendRankDownNotificationWs(payload.sub, decayResult.newRank);
+    }
+  }).catch(err => {
+    console.error('[WsHandler] Error in checkAndApplyRankDecay:', err);
+  });
+
   console.log(`[WsHandler] Authenticated: ${msg.installationId} (userId: ${payload.sub})`);
   return true;
+}
+
+// ── Phase 7-C: ランクダウン WS Push 通知ヘルパー ─────────────────────────────
+
+const RANK_DOWN_WS_MESSAGES: Record<string, { title: string; body: string }> = {
+  Gold: {
+    title: '⚠️ ゴールドランクに降格しました',
+    body: '長期間の非活動によりプラチナランクから降格しました。ネットワークに再参加してランクを取り戻しましょう！',
+  },
+  Silver: {
+    title: '⚠️ シルバーランクに降格しました',
+    body: '長期間の非活動によりゴールドランクから降格しました。ネットワークに再参加してランクを取り戻しましょう！',
+  },
+  Bronze: {
+    title: '⚠️ ブロンズランクに降格しました',
+    body: '長期間の非活動によりシルバーランクから降格しました。ネットワークに再参加してランクを取り戻しましょう！',
+  },
+};
+
+/**
+ * ランクダウン時に WS 経由でリアルタイム通知を送信する。
+ * DB への通知書き込みは rank-service.ts の createRankDownNotification() が行う。
+ */
+async function sendRankDownNotificationWs(userId: string, newRank: string): Promise<void> {
+  const msg = RANK_DOWN_WS_MESSAGES[newRank];
+  if (!msg) return;
+
+  try {
+    // rank-service が notifications に書き込んだ最新レコードを取得
+    const latestNotif = db
+      .select()
+      .from(notifications)
+      .where(and(eq(notifications.user_id, userId), eq(notifications.type, 'rank_down')))
+      .orderBy(desc(notifications.created_at))
+      .limit(1)
+      .get();
+
+    const notifId = latestNotif?.id ?? uuidv4();
+
+    peerManager.sendNotificationToUser(
+      userId,
+      notifId,
+      'rank_down',
+      msg.title,
+      msg.body,
+    );
+  } catch (err) {
+    console.error('[WsHandler] Failed to send rank-down WS notification:', err);
+  }
 }
 
 // ── B4: NPS (NodeParticipationState) 更新ヘルパー ────────────────────────────

@@ -2,7 +2,7 @@
 
 > スマートフォンのアイドル時間を分散AIネットワークに提供し、ポイントを獲得してAI機能を利用できるサービス
 
-**現在のステータス: Phase 7 — ITransport 抽象化 + Push 通知 完了 / Phase 8 準備中**
+**現在のステータス: Phase 7-C — ランクダウンロジック 完了 / Phase 8 準備中**
 
 ---
 
@@ -260,7 +260,8 @@ noodla/
 │   ├── PHASE6-REPORT.md    # Phase 6 実装レポート（報酬実感の本実装）
 │   ├── PHASE6-TESTING.md   # Phase 6 テスト手順書
 │   ├── PHASE7-DESIGN.md    # Phase 7 設計書（ITransport + Push通知）
-│   └── PHASE7-REPORT.md    # Phase 7 実装レポート
+│   ├── PHASE7-REPORT.md    # Phase 7 実装レポート
+│   └── PHASE7C-REPORT.md   # Phase 7-C 実装レポート（ランクダウン）
 │
 └── package.json            # ルート（フロントエンド）
 ```
@@ -278,6 +279,7 @@ noodla/
 | Phase 5 | ✅ 完了 | WebSocket リアルタイム疎通（2台スマホでの疑似ジョブ往復） |
 | Phase 6 | ✅ 完了 | 報酬実感の本実装（ポイント本運用 + ランク自動化 + WS状態見える化） |
 | Phase 7 | ✅ 完了 | ITransport 抽象化 + Push 通知（WS リアルタイム + expo-notifications） |
+| Phase 7-C | ✅ 完了 | ランクダウンロジック（非活動デケイ + ランクダウン + Push 通知） |
 | Phase 8 | 📋 計画 | WebRTC DataChannel 移行・Expo Push API サーバーサイド連携 |
 
 ---
