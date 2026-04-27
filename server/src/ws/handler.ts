@@ -7,7 +7,7 @@ import { nodeParticipationStates, notifications } from '../db/schema.js';
 import { peerManager } from './peer-manager.js';
 import { JobJudge } from './job-judge.js';
 import { JobScheduler } from './job-scheduler.js';
-import { checkAndApplyRankDecay } from '../services/rank-service.js';
+import { checkAndApplyRankDecay, recordDailyParticipation } from '../services/rank-service.js';
 import type {
   ClientToServerMessage,
   ConnectedMessage,
@@ -292,10 +292,22 @@ export function createWsHandlers() {
 
         case 'leave_network':
           if (state.installationId && state.userId) {
+            const peer = peerManager.getPeer(state.installationId);
+            const participatingStartedAt = peer?.participatingStartedAt ?? null;
+
             peerManager.setStatus(state.installationId, 'waiting');
             // B4: NPS ステータスを 'waiting' に更新
             updateNpsStatus(state.installationId, state.userId, 'waiting');
             console.log(`[WsHandler] ${state.installationId} left network`);
+
+            // Phase 7-D: 参加セッション終了時に consecutive_days / total_days_active / avg_participation_hours を更新
+            if (participatingStartedAt) {
+              const sessionMs = Date.now() - participatingStartedAt.getTime();
+              const sessionMinutes = sessionMs / 60_000;
+              recordDailyParticipation(state.userId, sessionMinutes).catch(err => {
+                console.error('[WsHandler] recordDailyParticipation error:', err);
+              });
+            }
           }
           break;
 
@@ -330,10 +342,23 @@ export function createWsHandlers() {
       }
 
       if (state.installationId) {
+        const peer = peerManager.getPeer(state.installationId);
+        const wasParticipating = peer?.status === 'participating';
+        const participatingStartedAt = peer?.participatingStartedAt ?? null;
+
         peerManager.removePeer(state.installationId);
         // B4: NPS ステータスを 'offline' に更新
         if (state.userId) {
           updateNpsStatus(state.installationId, state.userId, 'offline');
+        }
+
+        // Phase 7-D: 切断時にも連続参加日数・avg_participation_hours を記録
+        if (wasParticipating && state.userId && participatingStartedAt) {
+          const sessionMs = Date.now() - participatingStartedAt.getTime();
+          const sessionMinutes = sessionMs / 60_000;
+          recordDailyParticipation(state.userId, sessionMinutes).catch(err => {
+            console.error('[WsHandler] recordDailyParticipation error on close:', err);
+          });
         }
       }
 

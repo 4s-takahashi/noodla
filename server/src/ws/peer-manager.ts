@@ -14,6 +14,8 @@ export interface ConnectedPeer {
   status: 'waiting' | 'participating';
   connectedAt: Date;
   lastHeartbeat: Date;
+  /** セッション開始時刻（join_network 時にセット）。uptime 精度計算に使用 */
+  participatingStartedAt: Date | null;
   os: 'ios' | 'android' | 'unknown';
   pendingJobs: Set<string>;
 }
@@ -37,7 +39,7 @@ export class PeerManager {
 
   // ── Peer Registration ──────────────────────────────────────────────────────
 
-  addPeer(peer: Omit<ConnectedPeer, 'connectedAt' | 'lastHeartbeat' | 'pendingJobs'>): void {
+  addPeer(peer: Omit<ConnectedPeer, 'connectedAt' | 'lastHeartbeat' | 'pendingJobs' | 'participatingStartedAt'>): void {
     const existing = this.peers.get(peer.installationId);
     if (existing) {
       // 後勝ち: 既存接続を閉じる
@@ -53,6 +55,7 @@ export class PeerManager {
       ...peer,
       connectedAt: new Date(),
       lastHeartbeat: new Date(),
+      participatingStartedAt: null,
       pendingJobs: new Set(),
     };
 
@@ -62,7 +65,17 @@ export class PeerManager {
   }
 
   removePeer(installationId: string): void {
-    if (this.peers.has(installationId)) {
+    const peer = this.peers.get(installationId);
+    if (peer) {
+      // Phase 7-D: 切断時に participating セッションの正確な uptime を記録
+      if (peer.status === 'participating' && peer.participatingStartedAt) {
+        const sessionMs = Date.now() - peer.participatingStartedAt.getTime();
+        const sessionMinutes = sessionMs / 60_000;
+        if (sessionMinutes > 0) {
+          this.recordSessionUptimeAsync(installationId, peer.userId, sessionMinutes);
+        }
+      }
+
       this.peers.delete(installationId);
       console.log(`[PeerManager] Removed peer: ${installationId}, total: ${this.peers.size}`);
       this.broadcastNetworkStatus();
@@ -74,7 +87,24 @@ export class PeerManager {
   setStatus(installationId: string, status: 'waiting' | 'participating'): void {
     const peer = this.peers.get(installationId);
     if (peer) {
+      const prevStatus = peer.status;
       peer.status = status;
+
+      // Phase 7-D: participating 開始/終了時刻をトラッキング
+      if (status === 'participating' && prevStatus !== 'participating') {
+        peer.participatingStartedAt = new Date();
+      } else if (status === 'waiting' && prevStatus === 'participating') {
+        // leave_network: 参加セッションを終了し DB に正確な uptime を記録
+        if (peer.participatingStartedAt) {
+          const sessionMs = Date.now() - peer.participatingStartedAt.getTime();
+          const sessionMinutes = sessionMs / 60_000;
+          if (sessionMinutes > 0) {
+            this.recordSessionUptimeAsync(installationId, peer.userId, sessionMinutes);
+          }
+          peer.participatingStartedAt = null;
+        }
+      }
+
       this.broadcastNetworkStatus();
     }
   }
@@ -231,7 +261,7 @@ export class PeerManager {
     }, this.HEARTBEAT_TIMEOUT_MS / 3);
   }
 
-  /** today_uptime_minutes と total_uptime_minutes を非同期で加算する */
+  /** today_uptime_minutes と total_uptime_minutes を非同期で加算する (heartbeat ベース) */
   private incrementUptimeAsync(installationId: string, userId: string, incrementMinutes: number): void {
     const increment = Math.max(0, Math.round(incrementMinutes * 10) / 10); // 小数点1桁
     if (increment <= 0) return;
@@ -249,6 +279,65 @@ export class PeerManager {
         ),
       )
       .run();
+  }
+
+  /**
+   * Phase 7-D: セッション終了時（切断 or leave_network）に session_start_at ベースで
+   * 正確なセッション時間を today/total_uptime_minutes に反映する。
+   * heartbeat ベースのインクリメントとの二重計上を避けるため、
+   * ハートビートインターバルで既に加算済みの分を除いた「残差」を加算する。
+   *
+   * 設計上の注意:
+   *   heartbeat モニターが HEARTBEAT_TIMEOUT_MS/3 = 10秒ごとに約0.167分を加算するため、
+   *   セッション中は heartbeat ループで概算が積み上がっている。
+   *   切断時にはセッション実時間から heartbeat 加算済み推定値を引いた残差を加算し、
+   *   合計が session_start_at → 切断時刻と一致するよう補正する。
+   */
+  public recordSessionUptimeAsync(
+    installationId: string,
+    userId: string,
+    actualSessionMinutes: number,
+  ): void {
+    // heartbeat ループで加算済みの推定値 (HEARTBEAT_TIMEOUT_MS/3 ms ごとに intervalMinutes を加算)
+    const heartbeatIntervalMs = this.HEARTBEAT_TIMEOUT_MS / 3;
+    const intervalMinutes = heartbeatIntervalMs / 60_000;
+    // セッション中に heartbeat が何回発火したかを推定（切り捨て）
+    const heartbeatFires = Math.floor(actualSessionMinutes / intervalMinutes);
+    const alreadyCounted = heartbeatFires * intervalMinutes;
+
+    // 残差 = セッション実時間 - 既加算推定値
+    const residualMinutes = actualSessionMinutes - alreadyCounted;
+    const residual = Math.max(0, Math.round(residualMinutes * 10) / 10);
+
+    if (residual <= 0) {
+      console.log(
+        `[PeerManager] Session uptime residual for ${installationId}: 0 min (session=${actualSessionMinutes.toFixed(2)}min, counted=${alreadyCounted.toFixed(2)}min)`,
+      );
+      return;
+    }
+
+    console.log(
+      `[PeerManager] Recording session uptime residual for ${installationId}: +${residual.toFixed(1)}min ` +
+      `(session=${actualSessionMinutes.toFixed(2)}min, heartbeat_counted=${alreadyCounted.toFixed(2)}min)`,
+    );
+
+    try {
+      db.update(nodeParticipationStates)
+        .set({
+          today_uptime_minutes: sql`${nodeParticipationStates.today_uptime_minutes} + ${residual}`,
+          total_uptime_minutes: sql`${nodeParticipationStates.total_uptime_minutes} + ${residual}`,
+          updated_at: sql`(datetime('now'))`,
+        })
+        .where(
+          and(
+            eq(nodeParticipationStates.installation_id, installationId),
+            eq(nodeParticipationStates.user_id, userId),
+          ),
+        )
+        .run();
+    } catch (err) {
+      console.error(`[PeerManager] Failed to record session uptime for ${installationId}:`, err);
+    }
   }
 
   private startBroadcastInterval(): void {
